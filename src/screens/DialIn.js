@@ -33,8 +33,10 @@ export default function DialIn({ grinder, coffee, shots, blocked, onSaveShot, on
   }, [profileKey]);
   const set = k => v => setF(p => ({ ...p, [k]: v }));
 
-  const now = { target: f.target, dose: f.dose, yield: f.yieldTarget, roomTemp: f.roomTemp, humidity: f.humidity, groupTemp: f.groupTemp, workload: f.workload };
-  const r = useMemo(() => recommend({ shots, rules, now }), [shots, grinder, f.target, f.dose, f.yieldTarget, f.roomTemp, f.humidity, f.groupTemp, f.workload]);
+  const mid = num(f.tLo) !== null && num(f.tHi) !== null ? (num(f.tLo) + num(f.tHi)) / 2 : null;
+  const band = `${fmt(num(f.tLo), 0)}–${fmt(num(f.tHi), 0)}`;
+  const now = { target: mid, targetLo: f.tLo, targetHi: f.tHi, dose: f.dose, yield: f.yieldTarget, roomTemp: f.roomTemp, humidity: f.humidity, groupTemp: f.groupTemp, workload: f.workload };
+  const r = useMemo(() => recommend({ shots, rules, now }), [shots, grinder, f.tLo, f.tHi, f.dose, f.yieldTarget, f.roomTemp, f.humidity, f.groupTemp, f.workload]);
 
   const toShot = () => {
     if (!f.bean.trim()) return setErr('Add the coffee name.');
@@ -51,7 +53,7 @@ export default function DialIn({ grinder, coffee, shots, blocked, onSaveShot, on
     onSaveShot({
       bean: f.bean.trim(), roast: '', setting: num(f.setting), doserTime: num(f.doserTime), dose: num(f.dose),
       yield: num(f.yieldOut) ?? num(f.yieldTarget), time: num(f.time), groupTemp: num(f.groupTemp), roomTemp: num(f.roomTemp),
-      humidity: num(f.humidity), workload: f.workload, taste: f.taste, notes: '', target: num(f.target),
+      humidity: num(f.humidity), workload: f.workload, taste: f.taste, notes: '', target: mid, targetLo: num(f.tLo), targetHi: num(f.tHi),
     });
     setStep('result');
   };
@@ -93,7 +95,8 @@ export default function DialIn({ grinder, coffee, shots, blocked, onSaveShot, on
           <View style={st.steppers}>
             <Stepper label="DOSE WEIGHT" unit="g" value={f.dose} onChange={set('dose')} step={0.1} />
             <Stepper label="TARGET YIELD" unit="g" value={f.yieldTarget} onChange={set('yieldTarget')} step={0.5} />
-            <Stepper label="TARGET TIME" unit="s" value={f.target} onChange={set('target')} step={0.5} />
+            <Stepper label="TARGET FROM" unit="s" value={f.tLo} onChange={set('tLo')} step={0.5} />
+            <Stepper label="TARGET TO" unit="s" value={f.tHi} onChange={set('tHi')} step={0.5} />
             <Stepper label="ROOM" unit="°C" value={f.roomTemp} onChange={set('roomTemp')} step={0.1} />
             <Stepper label="HUMIDITY" unit="% RH" value={f.humidity} onChange={set('humidity')} step={1} decimals={0} />
             <Stepper label="GROUP HEAD" unit="°C" value={f.groupTemp} onChange={set('groupTemp')} step={1} decimals={0} />
@@ -117,7 +120,7 @@ export default function DialIn({ grinder, coffee, shots, blocked, onSaveShot, on
           <View style={st.timeBox}>
             <Text style={st.tileLabel}>EXTRACTION TIME</Text>
             <View style={st.inline}>
-              <TextInput value={f.time} onChangeText={set('time')} keyboardType="decimal-pad" placeholder={String(f.target || 28)}
+              <TextInput value={f.time} onChangeText={set('time')} keyboardType="decimal-pad" placeholder={band}
                 placeholderTextColor={C.faint} style={st.timeInput} autoFocus />
               <Text style={st.unit}>s</Text>
             </View>
@@ -148,7 +151,7 @@ export default function DialIn({ grinder, coffee, shots, blocked, onSaveShot, on
       {step === 'result' ? (
         <Card style={{ alignItems: 'stretch' }}>
           <Text style={st.h}>3 · CHANGE FOR YOUR NEXT SHOT</Text>
-          {last ? <Text style={st.small}>Last shot: {fmt(last.time)} s on {last.setting} against your {fmt(num(f.target))} s target.</Text> : null}
+          {last ? <Text style={st.small}>Last shot: {fmt(last.time)} s on {last.setting} against your {band} s target.</Text> : null}
           <Result r={r} M={M} grinder={grinder} onChangeRules={onChangeRules} />
           {r.status === 'ready' ? <Button title="Pull the next shot with these settings" onPress={nextShot} /> : <Button title="Log another shot" onPress={nextShot} />}
           <Pressable onPress={onOpenRules}><Text style={st.link}>All grinder rules for {grinder.name}</Text></Pressable>
@@ -171,9 +174,9 @@ export default function DialIn({ grinder, coffee, shots, blocked, onSaveShot, on
         <Card>
           <View style={st.rowBetween}>
             <Text style={st.h}>LAST {Math.min(12, shots.length)} SHOTS</Text>
-            <Text style={st.small}>target band {fmt(num(f.target) - 1, 0)}–{fmt(num(f.target) + 1, 0)} s</Text>
+            <Text style={st.small}>target band {band} s</Text>
           </View>
-          <ShotsChart shots={shots.slice(-12)} target={num(f.target) || 28} />
+          <ShotsChart shots={shots.slice(-12)} target={mid || 29} lo={num(f.tLo)} hi={num(f.tHi)} />
           <View style={st.legend}>
             <Dot color={C.warn} label="Sour" /><Dot color={C.good} label="Balanced" /><Dot color={C.bad} label="Bitter" />
           </View>
@@ -227,7 +230,7 @@ function BlockedNote({ blocked, onSeePlans }) {
 function Result({ r, M, grinder, onChangeRules }) {
   if (r.status === 'no-shots') return <Note>Log a shot first, then the app tells you what to change.</Note>;
   if (r.status === 'need-more') return <Note>Fill in this grinder's rules, or log a second shot at a different grind setting.</Note>;
-  if (r.status === 'no-target') return <Note>Set a target extraction time in step 1.</Note>;
+  if (r.status === 'no-target') return <Note>Set your target time band in step 1.</Note>;
   if (r.status === 'flat') return <Note tone="warn">Changing the grind isn't moving the time much in your shots yet. Try shots further apart on the dial.</Note>;
   const d = r.dial, ds = r.dose;
   const rawRule = (grinder.rules || {}).doserNotch;
@@ -292,7 +295,8 @@ function formFrom(last, coffee) {
   return {
     bean: coffee || l.bean || '',
     setting: str(l.setting), doserTime: str(l.doserTime), dose: str(l.dose ?? 18),
-    yieldTarget: str(l.yield ?? 36), target: str(l.target ?? 28),
+    yieldTarget: str(l.yield ?? 36),
+    tLo: str(l.targetLo ?? (l.target != null ? l.target - 1 : 28)), tHi: str(l.targetHi ?? (l.target != null ? l.target + 1 : 30)),
     roomTemp: str(l.roomTemp), humidity: str(l.humidity), groupTemp: str(l.groupTemp ?? 93),
     workload: l.workload ?? 1, time: '', taste: '', yieldOut: '',
   };

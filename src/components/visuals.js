@@ -55,7 +55,8 @@ export function Gauge({ value, anchor, M, size = 270, children }) {
 
 const TASTE = { sour: C.warn, balanced: C.good, bitter: C.bad };
 
-export function ShotsChart({ shots, target = 28, height = 180 }) {
+export function ShotsChart({ shots, target = 28, lo, hi, height = 180 }) {
+  const bLo = Number.isFinite(lo) ? lo : target - 1, bHi = Number.isFinite(hi) ? hi : target + 1;
   const [w, setW] = useState(0);
   const pad = { l: 38, r: 12, t: 12, b: 26 };
   const times = shots.map(s => s.time);
@@ -67,7 +68,7 @@ export function ShotsChart({ shots, target = 28, height = 180 }) {
     <View onLayout={e => setW(e.nativeEvent.layout.width)} style={{ height }}>
       {w > 0 ? (
         <Svg width={w} height={height}>
-          <Rect x={pad.l} y={Y(target + 1)} width={w - pad.l - pad.r} height={Y(target - 1) - Y(target + 1)} fill={C.accentSoft} />
+          <Rect x={pad.l} y={Y(bHi)} width={w - pad.l - pad.r} height={Y(bLo) - Y(bHi)} fill={C.accentSoft} />
           <Line x1={pad.l} x2={w - pad.r} y1={Y(target)} y2={Y(target)} stroke={C.muted} strokeDasharray="4,4" strokeWidth={1} />
           {yTicks.map(t => (
             <SvgText key={t} x={pad.l - 6} y={Y(t) + 4} fill={C.muted} fontSize="11" textAnchor="end">{`${Math.round(t)}s`}</SvgText>
