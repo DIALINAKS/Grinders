@@ -16,7 +16,7 @@ This is the React Native / Expo version of Grind Dial-In. It runs on iPhone and 
   - "If you don't move it" prediction.
   - **Pull it and log the shot** button.
   - + / − steppers for the conditions, workload, quick adjust (folded away), why this setting, and a last 12 shots chart.
-- **Log shot:** extraction time first, in big type, then Sour / Balanced / Bitter and Save. Everything else is pre-filled under "More details".
+- **Dial-in flow:** 1 Before the shot (grinder reading, dose time, dose weight, room), 2 Run it (extraction time, yield, taste), 3 Change (new grind and dose time, with dose time per notch set right under it).
 - **History, Insights** ("Getting closer" week by week, "What moves your shot") and **Account** tabs. Grinder rules open from the Dial-in screen.
 - **Plan limits:**
   - Free: 20 shots, 1 grinder.

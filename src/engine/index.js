@@ -274,7 +274,7 @@ export function recommend({ shots, rules, now, quick }) {
     target, ifUnchanged: expected,
     finerIsHigher: b1 > 0,
     dose: { seconds: doser, preset, lastSeconds: lastR ? lastR.doserTime : null, lastGrams: lastR ? lastR.dose : null,
-            change: doserMove, perNotch: kDoser, perNotchSource: kSrc, unknownPerNotch: doserUnknown },
+            change: doserMove, perNotch: kDoser, perNotchSource: kSrc, unknownPerNotch: doserUnknown, gapNotches: finerGap },
     secondsPerNotch: Math.abs(b1), secondsPerMark: Math.abs(b1) / M, secondsPerQuarter: Math.abs(b1) / M / QTR,
     shotsUsed: m.n, fitPercent: m.r2 !== null && m.n > 2 ? Math.round(Math.max(0, m.r2) * 100) : null,
     direction: b1 < 0 ? 'Lower numbers run slower on this grinder.' : 'Higher numbers run slower on this grinder.',

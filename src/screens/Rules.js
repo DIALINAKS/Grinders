@@ -24,9 +24,15 @@ export default function Rules({ grinder, onChange, readOnly }) {
         <Field label="Extraction seconds per notch" value={r.step} onChangeText={set('step')} editable={!readOnly} />
         <Field label="Room climate °C per notch" value={r.deg} onChangeText={set('deg')} editable={!readOnly} />
         <Field label="Humidity that equals 1 °C (% RH)" value={r.humEq} onChangeText={set('humEq')} editable={!readOnly} />
-        <Field label="Dose time per notch finer (s)" value={r.doserNotch} onChangeText={set('doserNotch')} placeholder="Blank = learn it" editable={!readOnly} />
-        <Field label="Saved doser presets (s)" value={r.presets} onChangeText={set('presets')} keyboardType="default" placeholder="e.g. 5.8, 6.0, 6.2" width="full" editable={!readOnly} />
       </Grid>
+      <View style={{ gap: S.sm }}>
+        <Label>Dose time</Label>
+        <Grid>
+          <Field label="Seconds more per notch finer" value={r.doserNotch} onChangeText={set('doserNotch')} placeholder="Blank = learn it" editable={!readOnly} />
+          <Field label="Saved doser presets (s)" value={r.presets} onChangeText={set('presets')} keyboardType="default" placeholder="e.g. 5.8, 6.0, 6.2" editable={!readOnly} />
+        </Grid>
+        <Body muted>A finer grind comes out slower, so the doser needs longer for the same weight. You can also set this on the result screen, under the dose time.</Body>
+      </View>
       <View style={{ gap: S.sm }}>
         <Label>Finer on this grinder is</Label>
         <Segmented disabled={readOnly} options={[{ value: 'lower', label: 'A lower number' }, { value: 'higher', label: 'A higher number' }]} value={r.dir} onChange={set('dir')} />

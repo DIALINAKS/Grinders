@@ -8,7 +8,6 @@ import { tierOf, usageText, activeGrinders, reconcileGrinders, shotLimitReached,
 import Welcome from './src/screens/Welcome';
 import Setup from './src/screens/Setup';
 import DialIn from './src/screens/DialIn';
-import LogShot from './src/screens/LogShot';
 import History from './src/screens/History';
 import Insights from './src/screens/Insights';
 import Rules from './src/screens/Rules';
@@ -17,7 +16,6 @@ import ArchivePick from './src/screens/ArchivePick';
 
 const TABS = [
   { key: 'dial', label: 'DIAL-IN', icon: 'dial' },
-  { key: 'log', label: 'LOG SHOT', icon: 'cup' },
   { key: 'history', label: 'HISTORY', icon: 'list' },
   { key: 'insights', label: 'INSIGHTS', icon: 'bars' },
   { key: 'account', label: 'ACCOUNT', icon: 'user' },
@@ -27,7 +25,6 @@ export default function App() {
   const [st, setSt] = useState(null);         // saved state, null while loading
   const [tab, setTab] = useState('dial');
   const [overlay, setOverlay] = useState(null); // null | 'register' | 'rules' | 'welcome'
-  const [prefill, setPrefill] = useState(null); // from "Pull it and log the shot"
 
   useEffect(() => { load().then(setSt); }, []);
   const update = useCallback(fn => setSt(prev => { const next = fn(prev); save(next); return next; }), []);
@@ -79,12 +76,10 @@ export default function App() {
       ...s, shots: [...s.shots, { ...shot, id: newId('s'), grinderId: grinder.id, grinder: grinder.name, ts: new Date().toISOString(), sample: !!grinder.sample }],
       coffee: { ...s.coffee, [grinder.id]: shot.bean },
     }));
-    setPrefill(null);
   };
   const deleteShot = id => update(s => ({ ...s, shots: s.shots.filter(x => x.id !== id) }));
   const changeRules = rules => update(s => ({ ...s, grinders: s.grinders.map(g => (g.id === grinder.id ? { ...g, rules } : g)) }));
   const keepGrinder = id => update(s => ({ ...s, grinderId: id, grinders: s.grinders.map(g => (g.archived || g.sample ? g : { ...g, archived: g.id !== id })) }));
-  const pull = p => { setPrefill(p); setTab('log'); };
 
   /* ---------- body ---------- */
   let body;
@@ -104,10 +99,8 @@ export default function App() {
       </View>
     );
   } else if (tab === 'dial') {
-    body = <DialIn grinder={grinder} coffee={coffee} shots={profileShots} onPull={pull} onOpenRules={() => setOverlay('rules')} />;
-  } else if (tab === 'log') {
-    body = <LogShot grinder={grinder} coffee={coffee} lastShot={profileShots[profileShots.length - 1]} prefill={prefill}
-      blocked={blocked} onSave={saveShot} onSeePlans={() => setTab('account')} />;
+    body = <DialIn grinder={grinder} coffee={coffee} shots={profileShots} blocked={blocked} onSaveShot={saveShot}
+      onChangeRules={changeRules} onOpenRules={() => setOverlay('rules')} onSeePlans={() => setTab('account')} />;
   } else if (tab === 'history') {
     body = <History shots={profileShots} onDelete={deleteShot} readOnly={grinder.archived} />;
   } else {
@@ -144,7 +137,7 @@ export default function App() {
               <Label>Coffee</Label>
               <Chips items={[...coffees, ...(coffee === '' ? [] : [])].map(c => ({ key: c, label: c }))} value={coffee}
                 onChange={c => update(s => ({ ...s, coffee: { ...s.coffee, [grinder.id]: c } }))}
-                addLabel="New coffee" onAdd={() => { update(s => ({ ...s, coffee: { ...s.coffee, [grinder.id]: '' } })); setPrefill(null); setTab('log'); }} />
+                addLabel="New coffee" onAdd={() => { update(s => ({ ...s, coffee: { ...s.coffee, [grinder.id]: '' } })); setTab('dial'); }} />
             </View>
           </View>
         ) : null}
