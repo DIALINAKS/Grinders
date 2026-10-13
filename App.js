@@ -1,3 +1,4 @@
+import LOGO from './src/logo';
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, Image, ScrollView, Pressable, SafeAreaView, StatusBar, Platform, KeyboardAvoidingView, StyleSheet } from 'react-native';
 import { C, S, R } from './src/theme';
@@ -121,7 +122,7 @@ export default function App() {
     <Shell>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={st_.scroll} keyboardShouldPersistTaps="handled">
         <View style={st_.header}>
-          <Image source={require('./assets/logo.png')} style={st_.logo} />
+          <Image source={LOGO} style={st_.logo} />
           <View style={{ flex: 1 }}>
             <Text style={st_.title}>GRIND DIAL-IN</Text>
             <Text style={st_.sub}>BARISTA LIFE</Text>
