@@ -362,8 +362,8 @@ export function sampleShots(grinderId) {
 
 export const TIERS = {
   free:     { id: 'free',     label: 'Free',     grinders: 1,        shots: 20,       month: 0,    year: 0 },
-  pro:      { id: 'pro',      label: 'Pro',      grinders: 1,        shots: Infinity, month: 2.99, year: 24.99 },
-  business: { id: 'business', label: 'Business', grinders: Infinity, shots: Infinity, month: 9.99, year: 89.99 },
+  pro:      { id: 'pro',      label: 'Pro',      grinders: 1,        shots: Infinity, month: 4.99, year: 41.99 },
+  business: { id: 'business', label: 'Business', grinders: Infinity, shots: Infinity, month: 15.00, year: 134.99 },
 };
 export const tierOf = id => TIERS[id] || TIERS.free;
 export const activeGrinders = grinders => grinders.filter(g => !g.archived);
