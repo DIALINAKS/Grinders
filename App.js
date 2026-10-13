@@ -5,6 +5,7 @@ import { load, save } from './src/store';
 import { newId, epochShots, activeCal, grinderCoffees, coffeeById, saveCalibration, recalibrate, withSample, withoutSample } from './src/model';
 import { Chips, Label, Card, Body, Button } from './src/components/ui';
 import { Icon } from './src/components/visuals';
+import { LOGO } from './src/logo';
 import { tierOf, usageText, activeGrinders, reconcileGrinders, shotLimitReached, fmt } from './src/engine';
 import Welcome from './src/screens/Welcome';
 import Setup from './src/screens/Setup';
@@ -155,7 +156,7 @@ export default function App() {
     <Shell>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={st_.scroll} keyboardShouldPersistTaps="handled">
         <View style={st_.header}>
-          <Image source={require('./assets/logo.png')} style={st_.logo} />
+          <Image source={LOGO} style={st_.logo} />
           <View style={{ flex: 1 }}>
             <Text style={st_.title}>DIAL IN</Text>
             <Text style={st_.sub}>BARISTA LIFE</Text>

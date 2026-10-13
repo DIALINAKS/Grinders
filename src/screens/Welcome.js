@@ -3,6 +3,7 @@ import { View, Text, Image, ScrollView, StyleSheet } from 'react-native';
 import { C, S, R } from '../theme';
 import { Button, Segmented } from '../components/ui';
 import { priceText } from '../engine';
+import { LOGO } from '../logo';
 
 const CARDS = [
   { id: 'free', name: 'FREE', sub: 'Discover Dial In', limits: '1 Grinder | 20 Shots', cta: 'Get Started' },
@@ -14,7 +15,7 @@ export default function Welcome({ bill, onBill, onChoose }) {
   return (
     <ScrollView style={{ flex: 1, backgroundColor: C.bg }} contentContainerStyle={st.wrap}>
       <View style={st.glow} />
-      <Image source={require('../../assets/logo.png')} style={st.logo} accessibilityIgnoresInvertColors />
+      <Image source={LOGO} style={st.logo} accessibilityIgnoresInvertColors />
       <Text style={st.title}>DIAL IN</Text>
       <Text style={st.tag}>Precision in every shot.</Text>
       <Text style={st.choose}>Choose your experience</Text>
