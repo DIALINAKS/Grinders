@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, Pressable, Alert, Platform, StyleSheet } from 'react-native';
 import { C, S, R } from '../theme';
 import { Card, H2, Body } from '../components/ui';
@@ -9,8 +9,9 @@ const TASTE_COLOR = { sour: C.warn, balanced: C.good, bitter: C.bad };
 
 export default function History({ shots, epochStart, onDelete, readOnly }) {
   const list = [...shots].reverse();
+  const [armed, setArmed] = useState(null); // web: tap twice to delete (browser dialogs may be blocked)
   const confirmDelete = s => {
-    if (Platform.OS === 'web') { if (typeof window !== 'undefined' && window.confirm('Delete this shot?')) onDelete(s.id); return; }
+    if (Platform.OS === 'web') { if (armed === s.id) { setArmed(null); onDelete(s.id); } else setArmed(s.id); return; }
     Alert.alert('Delete this shot?', 'It will be removed from the calibration history.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: () => onDelete(s.id) },
@@ -36,7 +37,7 @@ export default function History({ shots, epochStart, onDelete, readOnly }) {
           </Text>
           {epochStart && s.ts < epochStart ? <Text style={st.sub}>Before the grinder was recalibrated · not used</Text> : null}
           {s.notes ? <Text style={st.sub}>{s.notes}</Text> : null}
-          {!readOnly ? <Pressable onPress={() => confirmDelete(s)} hitSlop={8}><Text style={st.del}>Delete</Text></Pressable> : null}
+          {!readOnly ? <Pressable onPress={() => confirmDelete(s)} hitSlop={8}><Text style={st.del}>{armed === s.id ? 'Tap again to delete' : 'Delete'}</Text></Pressable> : null}
         </View>
       ))}
     </Card>
