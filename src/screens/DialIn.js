@@ -94,9 +94,9 @@ export default function DialIn({ grinder, coffee, shots, blocked, onSaveShot, on
             <Stepper label="DOSE WEIGHT" unit="g" value={f.dose} onChange={set('dose')} step={0.1} />
             <Stepper label="TARGET YIELD" unit="g" value={f.yieldTarget} onChange={set('yieldTarget')} step={0.5} />
             <Stepper label="TARGET TIME" unit="s" value={f.target} onChange={set('target')} step={0.5} />
-            <Stepper label="ROOM" unit="°C" value={f.roomTemp} onChange={set('roomTemp')} step={0.5} />
+            <Stepper label="ROOM" unit="°C" value={f.roomTemp} onChange={set('roomTemp')} step={0.1} />
             <Stepper label="HUMIDITY" unit="% RH" value={f.humidity} onChange={set('humidity')} step={1} decimals={0} />
-            <Stepper label="GROUP HEAD" unit="°C" value={f.groupTemp} onChange={set('groupTemp')} step={0.5} />
+            <Stepper label="GROUP HEAD" unit="°C" value={f.groupTemp} onChange={set('groupTemp')} step={0.1} />
           </View>
           <View style={{ gap: 6 }}>
             <Label>Workload now</Label>
