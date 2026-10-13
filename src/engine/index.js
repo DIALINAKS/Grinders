@@ -210,8 +210,12 @@ export function recommend({ shots, rules, now, quick }) {
     anchorLabel = `Last logged shot ${fmtDial(last.setting, M)} ran ${fmt(last.time)} s`;
   }
 
-  // move in quarter marks, never more than one full notch per shot
-  let rawDelta = (target - expected) / b1;
+  // move in quarter marks, never more than one full notch per shot.
+  // With a target band (e.g. 28–30 s), a shot expected inside the band needs no change.
+  const tLo = num(now.targetLo), tHi = num(now.targetHi);
+  const hasBand = ok(tLo) && ok(tHi) && tHi > tLo;
+  const inBand = hasBand && expected >= tLo && expected <= tHi;
+  let rawDelta = inBand ? 0 : (target - expected) / b1;
   const capped = Math.abs(rawDelta) > 1;
   if (capped) rawDelta = Math.sign(rawDelta);
   const QM = M * QTR;
@@ -226,7 +230,7 @@ export function recommend({ shots, rules, now, quick }) {
   const rem = delta - parts.reduce((t, p) => t + p.notch, 0);
   const breakdown = parts.length
     ? [...parts.map(p => ({ label: `${NAMES[p.k]} ${showVal(p.k, p.from, 'from')} → ${showVal(p.k, p.to, 'to')}`, move: word(p.notch) })),
-       { label: `Shot time against your ${fmt(target)} s target`, move: word(rem) }]
+       { label: `Shot time against your ${hasBand ? `${fmt(tLo, 0)}–${fmt(tHi, 0)}` : fmt(target)} s target`, move: word(rem) }]
     : [];
 
   const finerStep = b1 > 0 ? 1 : -1;
@@ -271,7 +275,7 @@ export function recommend({ shots, rules, now, quick }) {
             moveShort: Math.abs(delta) < 0.5 / QM ? 'hold' : word(delta),
             reason: (() => { const p = [...parts].sort((a, b) => Math.abs(b.notch) - Math.abs(a.notch))[0];
               return p ? `${NAMES[p.k]} ${showVal(p.k, p.from, 'from')} → ${showVal(p.k, p.to, 'to')}: ${word(p.notch)}` : ''; })() },
-    target, ifUnchanged: expected,
+    target, targetLo: hasBand ? tLo : null, targetHi: hasBand ? tHi : null, inBand, ifUnchanged: expected,
     finerIsHigher: b1 > 0,
     dose: { seconds: doser, preset, lastSeconds: lastR ? lastR.doserTime : null, lastGrams: lastR ? lastR.dose : null,
             change: doserMove, perNotch: kDoser, perNotchSource: kSrc, unknownPerNotch: doserUnknown, gapNotches: finerGap },
