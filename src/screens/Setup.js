@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { C, S } from '../theme';
-import { Card, Field, Label, Chips, Button, Body, Note } from '../components/ui';
+import { Card, Field, Label, Chips, Button, Body, Note, Segmented } from '../components/ui';
 import { MODELS, tierOf, canRegisterGrinder } from '../engine';
 
 /** First run, and "Register a grinder": set up a grinder, or explore with sample shots. */
 export default function Setup({ tier, grinders, hasSample, onRegister, onSample, onClose, onSeePlans, first }) {
   const [model, setModel] = useState('Mythos One');
   const [name, setName] = useState('');
+  const [gauge, setGauge] = useState(null);
   const [err, setErr] = useState('');
   const allowed = canRegisterGrinder(tier, grinders);
 
@@ -17,7 +18,8 @@ export default function Setup({ tier, grinders, hasSample, onRegister, onSample,
     if (grinders.some(g => g.name.trim().toLowerCase() === n.toLowerCase())) {
       setErr(`You already have a grinder called ${n}. Give this one a different name, e.g. "${n} – bar 2".`); return;
     }
-    onRegister(n, model);
+    if (gauge === null) { setErr('Tell us whether you have a temperature and humidity gauge.'); return; }
+    onRegister(n, model, gauge);
   };
 
   return (
@@ -31,13 +33,18 @@ export default function Setup({ tier, grinders, hasSample, onRegister, onSample,
           </>
         ) : (
           <>
-            <Body muted>Register the grinder you dial in on. Its rules give you a first recommendation from the very first shot.</Body>
+            <Body muted>Register the grinder you dial in on. Each grinder keeps its own calibration history, even two of the same model.</Body>
             <View><Label>Model</Label><Chips items={MODELS.map(m => ({ key: m, label: m }))} value={model} onChange={setModel} /></View>
             <Field label="Name" value={name} onChangeText={setName} keyboardType="default" width="full"
               placeholder={model === 'Other' ? 'e.g. Mahlkönig E65S' : `e.g. ${model} – bar 1`} />
+            <View style={{ gap: 6 }}>
+              <Label>Do you have a temperature and humidity gauge?</Label>
+              <Segmented options={[{ value: true, label: 'Yes, I can measure' }, { value: false, label: "No, I don't" }]} value={gauge} onChange={setGauge} />
+              <Body muted style={{ fontSize: 12 }}>Dial In works fully without one. You can change this later.</Body>
+            </View>
             {err ? <Text style={{ color: C.bad }}>{err}</Text> : null}
             <Button title="Register grinder" onPress={add} />
-            <Body muted style={{ fontSize: 12 }}>Mythos One and Compak E6 start with their known settings. You can adjust every rule afterwards.</Body>
+            <Body muted style={{ fontSize: 12 }}>Mythos One and Compak E6 start with their known dial layout. Settings are always worked out from your own grinder, never from another one.</Body>
           </>
         )}
         {!first ? <Button title="Close" kind="secondary" onPress={onClose} /> : null}

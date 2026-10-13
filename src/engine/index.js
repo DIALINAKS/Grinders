@@ -1,34 +1,41 @@
 /**
- * Grind Dial-In calibration engine.
+ * Dial In calibration engine (v2).
  *
  * Pure JavaScript with no React or device code, so the same file runs in the app,
- * on a server, and in tests. Ported line-for-line from the web prototype
- * (see the specification, section 4). Do not change behaviour here without
- * re-running tests/engine.test.mjs.
+ * on a server, and in tests. Drop-in for src/engine/index.js in the Expo app.
+ *
+ * What it does, per grinder:
+ *   1. Grind response k: extraction seconds per notch, learned from shots at different
+ *      settings (this coffee first, then the grinder's other coffees, then the benchmark).
+ *   2. Grind move: (target time − expected time) ÷ k, from the grinder's confirmed position.
+ *   3. Room temperature (s per °C) and absolute humidity (s per g/m³) as SEPARATE terms,
+ *      each starting at the barista's benchmark and replaced by measured values as data builds.
+ *   4. Doser time to hold the target dose: target dose ÷ grind rate (g/s) at the new setting.
+ * Every recommendation says what it is based on and how confident it is.
  */
 
 export const ok = Number.isFinite;
-const avg = a => a.reduce((x, y) => x + y, 0) / a.length;
+export const avg = a => a.reduce((x, y) => x + y, 0) / a.length;
 export const fmt = (v, d = 1) => (ok(v) ? v.toFixed(d) : '–');
+export const num = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
 
-/* ---------------- grinder rules ---------------- */
+/* ---------------- grinder rules (benchmarks) ---------------- */
 
 export const RULE_DEFAULTS = {
-  step: 10,          // extraction seconds per notch
+  step: 10,          // BENCHMARK: extraction seconds per whole number (notch) on the dial
   dir: 'lower',      // finer on this grinder is a 'lower' | 'higher' number
-  deg: 4,            // room climate °C per notch
+  deg: 4,            // BENCHMARK: room °C per notch
   warm: 'finer',     // when the room warms up: 'finer' | 'coarser'
   burr: 'fan',       // 'fan' (workload matters) | 'controlled'
   marks: 10,         // marks between numbers on the dial
   presets: '',       // saved doser presets, e.g. "5.8, 6.0, 6.2"
   loadMarks: '',     // marks coarser per step busier (fan-cooled only); blank = learn
-  humEq: 12,         // % RH that counts the same as 1 °C
+  humEq: 12,         // BENCHMARK: % RH that counts the same as 1 °C
   doserNotch: '',    // dose-time seconds to add per notch finer; blank = learn
 };
 
 export const MODELS = ['Mythos One', 'Compak E6', 'Mazzer', 'Other'];
 
-/** Known setups applied when a grinder is registered. */
 export function modelDefaults(model) {
   const n = (model || '').toLowerCase();
   if (n.includes('mythos')) return { marks: 6, burr: 'controlled', presets: '5.8, 6.0, 6.2' };
@@ -36,13 +43,10 @@ export function modelDefaults(model) {
   return {};
 }
 
-/** Full rule set for a grinder: defaults, then model defaults, then the barista's own values. */
 export function rulesFor(grinder) {
   const g = grinder || {};
   return { ...RULE_DEFAULTS, ...modelDefaults(g.model || g.name), ...(g.rules || {}) };
 }
-
-const num = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
 
 export function dialMarks(rules) {
   const v = parseInt(rules.marks, 10);
@@ -50,12 +54,11 @@ export function dialMarks(rules) {
 }
 
 /* ---------------- dial notation ----------------
-   Baristas type what the dial reads. On a dial with M marks between numbers,
-   "4.3" = number 4, mark 3 = 4 + 3/M notches. A second digit is a fraction past
-   the mark: 4.25 = halfway past mark 2. Display rounds to the nearest quarter mark. */
+   On a dial with M marks between numbers, "4.3" = number 4, mark 3 = 4 + 3/M notches.
+   A second digit is a fraction past the mark: 4.25 = halfway past mark 2. */
 
 export const QTR = 4;
-const FR = ['', '¼', '½', '¾'];
+export const FR = ['', '¼', '½', '¾'];
 
 export function fromDial(v, M) {
   if (!ok(v)) return null;
@@ -70,11 +73,12 @@ export function toDial(x, M) {
   return { w, mk, q: Math.round((d - mk) * QTR) };
 }
 export const fmtDial = (x, M) => { if (!ok(x)) return '–'; const t = toDial(x, M); return `${t.w}.${t.mk}${FR[t.q]}`; };
-const fracText = q => { const whole = Math.floor(q + 1e-9), f = Math.round((q - whole) * QTR); return (whole ? String(whole) : '') + FR[f] || '0'; };
+export const fracText = q => { const whole = Math.floor(q + 1e-9), f = Math.round((q - whole) * QTR); return (whole ? String(whole) : '') + FR[f] || '0'; };
 export const marksText = q => `${fracText(q)} mark${q > 1 ? 's' : ''}`;
 export const dialWords = (x, M) => { const t = toDial(x, M), d = t.mk + t.q / QTR; return d ? `${t.w} and ${marksText(d)}` : `on the ${t.w}`; };
+/** A dial value (notches) as what the barista types: 4 + 3/6 → "4.3". */
+export const toEntry = (x, M) => { const w = Math.floor(x + 1e-9), d = Math.round((x - w) * M * 4) / 4; return String(+(w + d / 10).toFixed(3)); };
 
-/** Validation for a grind setting typed by the barista. Returns an error message or null. */
 export function checkDialEntry(v, M) {
   if (!ok(v)) return 'Enter the grind setting.';
   if (M >= 10) return null;
@@ -85,13 +89,19 @@ export function checkDialEntry(v, M) {
 
 /* ---------------- the model ---------------- */
 
-// 'climate' = room temperature and humidity combined into one figure (°C equivalent)
-export const COV = ['climate', 'groupTemp', 'yield', 'workload', 'dose'];
-const SCALE = { climate: 5, groupTemp: 2, yield: 5, workload: 1, dose: 1 };
-const LAMBDA = 3;
-const PRIOR_W = 4;
+export const COV = ['roomTemp', 'humidity', 'groupTemp', 'yield', 'workload', 'dose'];
+export const ENV = ['roomTemp', 'humidity'];
+export const SCALE = { roomTemp: 5, humidity: 10, groupTemp: 2, yield: 5, workload: 1, dose: 1 };
+export const LAMBDA = 3;      // pull towards zero for terms with no benchmark
+export const PRIOR_W = 4;     // a benchmark counts like this many shots
+// Settings move in small steps (0.1–0.3 of a number), so a shot carries little weight on the
+// grind slope: SLOPE_W is the weight of ONE shot ±0.07 of a number from the mean (0.07² ≈ 0.005).
+export const SLOPE_W = 0.005;
+export const HALF_LIFE = 30;  // days: a shot this old counts half
+// evidence needed before a room-condition term is called "measured"
+export const EVIDENCE = { roomTemp: { n: 8, range: 3 }, humidity: { n: 8, range: 15 } };
 
-function solve(A, b) {
+export function solve(A, b) {
   const n = b.length, M = A.map((r, i) => [...r, b[i]]);
   for (let c = 0; c < n; c++) {
     let p = c; for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
@@ -102,44 +112,116 @@ function solve(A, b) {
   return M.map((r, i) => r[n] / r[i]);
 }
 
-/** Turn a rule set into the model's starting values (priors). */
-export function priorsFrom(rules) {
-  const spn = num(rules.step), deg = num(rules.deg), M = dialMarks(rules);
-  // finer always means a slower shot; which way the numbers run decides the sign
-  const slope = ok(spn) && spn > 0 ? (rules.dir === 'higher' ? spn : -spn) : null;
-  const secPerC = (ok(spn) && spn > 0 && ok(deg) && deg > 0) ? (rules.warm === 'finer' ? -1 : 1) * spn / deg : 0;
-  // busier = burrs expand = grind finer = slower shot, which the barista undoes by going coarser
+/** Benchmarks from the grinder's rules, in seconds per unit. */
+export function benchmarks(rules) {
+  const spn = num(rules.step), deg = num(rules.deg), M = dialMarks(rules), hEq = num(rules.humEq);
+  const slope = ok(spn) && spn > 0 ? (rules.dir === 'higher' ? spn : -spn) : null; // finer = slower
+  const perC = ok(spn) && spn > 0 && ok(deg) && deg > 0 ? (rules.warm === 'finer' ? -1 : 1) * spn / deg : 0;
+  const perRH = perC && ok(hEq) && hEq > 0 ? perC / hEq : 0;
   const lm = num(rules.loadMarks);
-  const loadPrior = (ok(spn) && spn > 0 && ok(lm) && lm > 0) ? (lm / M) * spn : 0;
-  return { slope, fan: rules.burr === 'fan', tempPrior: secPerC * SCALE.climate, loadPrior };
+  const perLoad = ok(spn) && spn > 0 && ok(lm) && lm > 0 ? (lm / M) * spn : 0;
+  return { slope, perC, perRH, perLoad, fan: rules.burr === 'fan' };
 }
 
-export function fit(list, pri) {
-  const prior = pri.slope;
-  const L = list.filter(s => ok(s.setting) && ok(s.time));
+/** Recency weight for a shot: 1 today, ½ after HALF_LIFE days. */
+export function ageWeight(ts, now = Date.now()) {
+  if (!ts) return 1;
+  const days = Math.max(0, (now - new Date(ts).getTime()) / 864e5);
+  return Math.pow(0.5, days / HALF_LIFE);
+}
+
+/** Prepare logged shots for the model: notches, absolute humidity, weights. Never invents readings. */
+export function prepare(shots, M, gauge, now) {
+  return shots.map(s => ({
+    ...s,
+    dial: s.setting,
+    setting: fromDial(num(s.setting), M),
+    roomTemp: gauge ? num(s.roomTemp) : null,
+    humidity: gauge ? num(s.humidity) : null,
+    w: ageWeight(s.ts, now),
+  }));
+}
+
+/**
+ * Grind response pooled across the grinder's coffees: each coffee keeps its own level,
+ * all share one seconds-per-notch. Returns { slope, n } or null.
+ */
+export function pooledSlope(P) {
+  const by = new Map();
+  P.filter(s => ok(s.setting) && ok(s.time)).forEach(s => { const k = s.coffeeId || s.bean || ''; if (!by.has(k)) by.set(k, []); by.get(k).push(s); });
+  let sxy = 0, sxx = 0, n = 0;
+  by.forEach(L => {
+    if (new Set(L.map(s => s.setting)).size < 2) return;
+    const W = L.reduce((t, s) => t + s.w, 0), mx = L.reduce((t, s) => t + s.w * s.setting, 0) / W, my = L.reduce((t, s) => t + s.w * s.time, 0) / W;
+    L.forEach(s => { sxy += s.w * (s.setting - mx) * (s.time - my); sxx += s.w * (s.setting - mx) ** 2; });
+    n += L.length;
+  });
+  return sxx > 1e-9 && n >= 2 ? { slope: sxy / sxx, n } : null;
+}
+
+/** How much evidence the shots hold for each room condition. */
+export function envEvidence(L) {
+  const out = {};
+  ENV.forEach(k => {
+    const v = L.map(s => s[k]).filter(ok);
+    const range = v.length ? Math.max(...v) - Math.min(...v) : 0;
+    out[k] = { n: v.length, range, measured: v.length >= EVIDENCE[k].n && range >= EVIDENCE[k].range };
+  });
+  // humidity and temperature must have moved separately, or the data can't tell them apart
+  const both = L.filter(s => ok(s.roomTemp) && ok(s.humidity));
+  if (both.length >= 3) {
+    const mx = avg(both.map(s => s.roomTemp)), my = avg(both.map(s => s.humidity));
+    const sxy = both.reduce((t, s) => t + (s.roomTemp - mx) * (s.humidity - my), 0);
+    const sxx = both.reduce((t, s) => t + (s.roomTemp - mx) ** 2, 0), syy = both.reduce((t, s) => t + (s.humidity - my) ** 2, 0);
+    const r = sxx > 0 && syy > 0 ? sxy / Math.sqrt(sxx * syy) : 0;
+    if (Math.abs(r) > 0.85) { out.roomTemp.measured = false; out.humidity.measured = false; out.tangled = true; }
+  }
+  return out;
+}
+
+/**
+ * Fit extraction time against grind setting and conditions for ONE coffee on ONE grinder.
+ * pool: the grinder's pooled slope (other coffees), used before this coffee has its own.
+ */
+export function fit(L0, bench, pool, gauge) {
+  // Room and workload benchmarks are in GRIND units (1 notch per 4 °C), so their seconds
+  // follow the grinder's own response: fit once, rescale them by the fitted slope, fit again.
+  const first = fitOnce(L0, bench, pool, gauge);
+  if (!first.ok || bench.slope === null || !bench.slope) return first;
+  const k = Math.abs(first.beta[1] / bench.slope);
+  return fitOnce(L0, { ...bench, perC: bench.perC * k, perRH: bench.perRH * k, perLoad: bench.perLoad * k }, pool, gauge);
+}
+
+function fitOnce(L0, bench, pool, gauge) {
+  const L = L0.filter(s => ok(s.setting) && ok(s.time));
   const n = L.length, distinct = new Set(L.map(s => s.setting)).size;
-  if (n < 1 || (distinct < 2 && prior === null)) return { ok: false, n };
-  const mean = {}, varies = {};
-  COV.forEach(k => { const v = L.map(s => s[k]).filter(ok); mean[k] = v.length ? avg(v) : 0;
-    varies[k] = v.length >= 2 && Math.max(...v) - Math.min(...v) > 1e-9; });
+  let slopePrior = null, slopeW = 0, slopeSource = 'benchmark';
+  if (distinct >= 2) slopeSource = 'measured';
+  if (pool && Math.abs(pool.slope) >= 0.3) { slopePrior = pool.slope; slopeW = SLOPE_W * Math.min(pool.n, 8); if (distinct < 2) slopeSource = 'grinder'; }
+  else if (bench.slope !== null) { slopePrior = bench.slope; slopeW = SLOPE_W * 2; }
+  if (n < 1 || (distinct < 2 && slopePrior === null)) return { ok: false, n };
+
+  const mean = {};
+  COV.forEach(k => { const v = L.map(s => s[k]).filter(ok); mean[k] = v.length ? avg(v) : 0; });
   const cov = (k, val) => (ok(val) ? (val - mean[k]) / SCALE[k] : 0);
   const row = s => [1, s.setting, ...COV.map(k => cov(k, s[k]))];
   const P = 2 + COV.length;
   const A = Array.from({ length: P }, () => Array(P).fill(0)), b = Array(P).fill(0);
-  L.forEach(s => { const r = row(s); for (let i = 0; i < P; i++) { b[i] += r[i] * s.time; for (let j = 0; j < P; j++) A[i][j] += r[i] * r[j]; } });
-  // each condition starts at the barista's rule (or zero) and moves only as shots show otherwise
+  L.forEach(s => { const r = row(s), w = ok(s.w) ? s.w : 1; for (let i = 0; i < P; i++) { b[i] += w * r[i] * s.time; for (let j = 0; j < P; j++) A[i][j] += w * r[i] * r[j]; } });
   const pr = {
-    climate: [pri.tempPrior, pri.tempPrior ? PRIOR_W : LAMBDA], groupTemp: [0, LAMBDA], yield: [0, LAMBDA],
-    workload: pri.fan ? [pri.loadPrior, pri.loadPrior ? PRIOR_W : 1] : [0, 1e6], dose: [0, LAMBDA],
+    roomTemp: gauge ? [bench.perC * SCALE.roomTemp, bench.perC ? PRIOR_W : LAMBDA] : [0, 1e6],
+    humidity: gauge ? [bench.perRH * SCALE.humidity, bench.perRH ? PRIOR_W : LAMBDA] : [0, 1e6],
+    groupTemp: [0, LAMBDA], yield: [0, LAMBDA], dose: [0, LAMBDA],
+    workload: bench.fan ? [bench.perLoad, bench.perLoad ? PRIOR_W : 1] : [0, 1e6],
   };
   COV.forEach((k, i) => { A[2 + i][2 + i] += pr[k][1]; b[2 + i] += pr[k][0] * pr[k][1]; });
-  if (prior !== null) { A[1][1] += PRIOR_W; b[1] += PRIOR_W * prior; }
+  if (slopePrior !== null) { A[1][1] += slopeW; b[1] += slopeW * slopePrior; }
   const beta = solve(A, b); if (!beta) return { ok: false, n };
   const pred = s => row(s).reduce((t, x, i) => t + x * beta[i], 0);
   const ssr = L.map(s => s.time - pred(s)).reduce((t, r) => t + r * r, 0);
   const my = avg(L.map(s => s.time)), sst = L.reduce((t, s) => t + (s.time - my) ** 2, 0);
   const sigma = n > 2 ? Math.sqrt(ssr / (n - 2)) : null;
-  // grind rate (g/s) against setting
+  // grind rate (g/s) against setting, for doser time
   const R = L.filter(s => ok(s.dose) && ok(s.doserTime) && s.doserTime > 0).map(s => ({ x: s.setting, y: s.dose / s.doserTime }));
   let rate = null;
   if (R.length) {
@@ -147,105 +229,146 @@ export function fit(list, pri) {
     const mx = avg(xs), myr = avg(rs), xmin = Math.min(...xs), xmax = Math.max(...xs);
     const rmin = Math.min(...rs), rmax = Math.max(...rs);
     const sxx = R.reduce((t, r) => t + (r.x - mx) ** 2, 0);
-    // only trust a grind-rate trend from 3+ shots, and shrink it while data is thin
     let slope = (R.length >= 3 && sxx > 1e-9) ? R.reduce((t, r) => t + (r.x - mx) * (r.y - myr), 0) / sxx : 0;
     slope *= R.length / (R.length + 3);
-    // never extrapolate beyond the settings tried, and keep the rate near what was measured
     rate = x => { const xc = Math.min(xmax, Math.max(xmin, x)); return Math.min(rmax * 1.15, Math.max(rmin * 0.85, myr + slope * (xc - mx))); };
   }
-  return { ok: true, n, beta, mean, cov, varies, sigma, r2: sst > 0 ? 1 - ssr / sst : null, L, rate };
+  return { ok: true, n, distinct, beta, mean, cov, sigma, r2: sst > 0 ? 1 - ssr / sst : null, L, rate, slopeSource, env: envEvidence(L) };
 }
 
 /* ---------------- recommendation ---------------- */
 
-const NAMES = { climate: 'Room climate', groupTemp: 'Group head', yield: 'Yield', workload: 'Workload', dose: 'Dose' };
-const LOADS = ['quiet', 'steady', 'busy'];
+export const NAMES = { position: 'Grinder moved since saving', roomTemp: 'Room temperature', humidity: 'Humidity', groupTemp: 'Group head', yield: 'Yield', workload: 'Workload', dose: 'Dose' };
+export const LOADS = ['quiet', 'steady', 'busy'];
+export const SOURCES = {
+  guidance: 'Initial calibration guidance',
+  grinder: 'Previously observed grinder behaviour',
+  environment: 'Historical environmental data',
+  benchmarkEnv: 'Observed grinder behaviour + room benchmark',
+};
 
 /**
- * Work out the two settings for the next shot.
+ * Work out the grind setting and doser time for the next shot.
  *
- * @param {object}   args
- * @param {object[]} args.shots   shots for one grinder + coffee, oldest first (setting in dial notation)
- * @param {object}   args.rules   the grinder's rules (see rulesFor)
- * @param {object}   args.now     { target, dose, yield, roomTemp, humidity, groupTemp, workload }
- * @param {object}  [args.quick]  optional { setting, time } for a shot just pulled
- * @returns {object} { status, ...readings }  status: 'ready' | 'no-shots' | 'need-more' | 'no-target' | 'flat'
+ * @param {object}   a
+ * @param {object[]} a.shots       this grinder + coffee, current calibration epoch, oldest first
+ * @param {object[]} [a.grinderShots] all this grinder's shots in the epoch (for the pooled slope)
+ * @param {object}   a.rules       the grinder's rules (rulesFor)
+ * @param {boolean}  [a.gauge=true] the grinder profile has a temperature & humidity gauge
+ * @param {object}   a.now         { target, lo, hi, dose, yield, roomTemp, humidity, groupTemp, workload }
+ * @param {object}   [a.anchor]    where to start from:
+ *     { kind:'shot', setting, time }                     a shot just pulled (already reflects today)
+ *     { kind:'calibration', cal, current }               a saved calibration + grinder's confirmed position
+ *   default: the last logged shot, corrected for any change in conditions
+ * @returns {object} { status, ... }  status: 'ready' | 'no-shots' | 'need-more' | 'no-target' | 'flat'
  */
-export function recommend({ shots, rules, now, quick }) {
-  const M = dialMarks(rules);
-  const hEq = num(rules.humEq), H = ok(hEq) && hEq > 0 ? hEq : 12;
-  const hs = shots.map(s => s.humidity).filter(ok), hFill = hs.length ? avg(hs) : 50;
-  const climateOf = (t, h) => (ok(t) ? t + ((ok(h) ? h : hFill) - 50) / H : null);
-  const P = shots.map(s => ({ ...s, dial: s.setting, setting: fromDial(s.setting, M), climate: climateOf(s.roomTemp, s.humidity) }));
-  const m = fit(P, priorsFrom(rules));
-  if (!P.length) return { status: 'no-shots', M };
+export function recommend({ shots, grinderShots, rules, gauge = true, now, anchor, nowTs }) {
+  const M = dialMarks(rules), QM = M * QTR;
+  const P = prepare(shots, M, gauge, nowTs);
+  const G = grinderShots ? prepare(grinderShots, M, gauge, nowTs) : P;
+  const bench = benchmarks(rules);
+  const cal = anchor && anchor.kind === 'calibration' ? anchor.cal : null;
+  if (!P.length && !cal) return { status: 'no-shots', M };
+  // a saved calibration counts as a data point for its coffee
+  const calRow = cal ? prepare([{ ...cal, ts: cal.ts }], M, gauge, nowTs)[0] : null;
+  const fitRows = P.length ? P : [calRow];
+  // the grinder's response on its OTHER coffees helps a coffee that hasn't been measured yet
+  const thisCoffee = cal ? cal.coffeeId : (P[0] && P[0].coffeeId);
+  const m = fit(fitRows, bench, pooledSlope(G.filter(s => !thisCoffee || s.coffeeId !== thisCoffee)), gauge);
   if (!m.ok) return { status: 'need-more', M, model: m };
   const target = num(now.target), dose = num(now.dose);
-  const c = {
-    climate: climateOf(ok(num(now.roomTemp)) ? num(now.roomTemp) : null, num(now.humidity)),
-    groupTemp: num(now.groupTemp), yield: num(now.yield), workload: num(now.workload), dose,
-    roomTemp: num(now.roomTemp), humidity: num(now.humidity),
-  };
-  const b1 = m.beta[1];
   if (!ok(target)) return { status: 'no-target', M, model: m };
+  // target band, e.g. 28–30 s: a shot expected inside it needs no change
+  const tLo = num(now.targetLo), tHi = num(now.targetHi);
+  const hasBand = ok(tLo) && ok(tHi) && tHi > tLo;
+  const lo = hasBand ? tLo : target - 1, hi = hasBand ? tHi : target + 1;
+  const b1 = m.beta[1];
   if (Math.abs(b1) < 0.3) return { status: 'flat', M, model: m, secondsPerNotch: b1 };
 
+  const c = {
+    roomTemp: gauge ? num(now.roomTemp) : null,
+    humidity: gauge ? num(now.humidity) : null,
+    groupTemp: num(now.groupTemp), yield: num(now.yield), workload: num(now.workload), dose,
+  };
   const last = m.L[m.L.length - 1];
-  const qT = quick ? num(quick.time) : null, qS = quick ? fromDial(num(quick.setting), M) : null;
   const parts = [];
-  let anchorS, expected, anchorLabel;
-  if (ok(qT) && ok(qS)) {
-    // a shot pulled right now already reflects today's room and workload
-    anchorS = qS; expected = qT; anchorLabel = `Shot just pulled at ${fmtDial(qS, M)} ran ${fmt(qT)} s`;
-  } else {
-    anchorS = last.setting;
+  let anchorS, expected, anchorLabel, fromS;
+  const condShift = ref => {
     let shift = 0;
     COV.forEach((k, i) => {
-      const to = ok(c[k]) ? c[k] : last[k];
-      const d = m.beta[2 + i] * (m.cov(k, to) - m.cov(k, last[k]));
+      // only move for a condition measured BOTH then and now; never fill a missing reading
+      if (!ok(c[k]) || !ok(ref[k])) return;
+      const d = m.beta[2 + i] * (m.cov(k, c[k]) - m.cov(k, ref[k]));
       shift += d;
-      if (Math.abs(d / b1) >= 0.5 / (M * QTR)) parts.push({ k, from: last[k], to, notch: -d / b1 });
+      if (Math.abs(d / b1) >= 0.5 / QM) parts.push({ k, from: ref[k], to: c[k], notch: -d / b1, seconds: d });
     });
-    expected = last.time + shift;
+    return shift;
+  };
+
+  if (anchor && anchor.kind === 'shot' && ok(num(anchor.time)) && ok(fromDial(num(anchor.setting), M))) {
+    anchorS = fromDial(num(anchor.setting), M); fromS = anchorS; expected = num(anchor.time);
+    anchorLabel = `Shot at ${fmtDial(anchorS, M)} ran ${fmt(expected)} s`;
+  } else if (cal) {
+    const calS = calRow.setting, cur = ok(fromDial(num(anchor.current), M)) ? fromDial(num(anchor.current), M) : calS;
+    fromS = calS; anchorS = cur;
+    if (Math.abs(cur - calS) >= 0.5 / QM) parts.push({ k: 'position', from: calS, to: cur, notch: calS - cur, seconds: b1 * (cur - calS) });
+    expected = num(cal.time) + b1 * (cur - calS) + condShift(calRow);
+    anchorLabel = `Saved calibration ${fmtDial(calS, M)} ran ${fmt(num(cal.time))} s` + (Math.abs(cur - calS) > 1e-6 ? `; grinder now on ${fmtDial(cur, M)}` : '');
+  } else {
+    anchorS = last.setting; fromS = anchorS;
+    expected = last.time + condShift(last);
     anchorLabel = `Last logged shot ${fmtDial(last.setting, M)} ran ${fmt(last.time)} s`;
   }
 
-  // move in quarter marks, never more than one full notch per shot.
-  // With a target band (e.g. 28–30 s), a shot expected inside the band needs no change.
-  const tLo = num(now.targetLo), tHi = num(now.targetHi);
-  const hasBand = ok(tLo) && ok(tHi) && tHi > tLo;
-  const inBand = hasBand && expected >= tLo && expected <= tHi;
-  let rawDelta = inBand ? 0 : (target - expected) / b1;
-  const capped = Math.abs(rawDelta) > 1;
-  if (capped) rawDelta = Math.sign(rawDelta);
-  const QM = M * QTR;
-  const delta = Math.round(rawDelta * QM) / QM, s0 = anchorS + delta;
+  const inRange = expected >= lo && expected <= hi;
+  let rawDelta = (target - expected) / b1;
+  let capped = false, conservative = false;
+  if (m.slopeSource === 'benchmark') {
+    // grind response unknown: half the benchmark move, no more than half a number per shot
+    conservative = true;
+    rawDelta = rawDelta * 0.5;
+    if (Math.abs(rawDelta) > 0.5) { rawDelta = 0.5 * Math.sign(rawDelta); capped = true; }
+    if (!inRange && Math.abs(rawDelta) < 1 / QM) rawDelta = Math.sign(rawDelta) / QM; // at least ¼ mark
+  } else if (Math.abs(rawDelta) > 1) { rawDelta = Math.sign(rawDelta); capped = true; }
+  if (inRange) rawDelta = 0; // inside the target band: taste it, no change
+  const delta = Math.round(rawDelta * QM) / QM;
+  const s0 = anchorS + delta;
   const word = n => { const k = Math.round(Math.abs(n) * QM); if (!k) return 'hold'; return `${marksText(k / QTR)} ${n * b1 > 0 ? 'finer' : 'coarser'}`; };
-  const move = Math.abs(delta) < 0.5 / QM ? 'hold, no change needed' : `${word(delta)} (${fmtDial(anchorS, M)} → ${fmtDial(s0, M)})`;
+  const isHold = Math.abs(delta) < 0.5 / QM;
+  const move = isHold ? 'hold, no change needed' : `${word(delta)} (${fmtDial(anchorS, M)} → ${fmtDial(s0, M)})`;
 
-  const roomTxt = (t, h) => `${ok(t) ? fmt(t) + ' °C' : '–'} · ${ok(h) ? fmt(h, 0) + '%' : '–'}`;
-  const showVal = (k, v, end) => (k === 'climate'
-    ? (end === 'from' ? roomTxt(last.roomTemp, last.humidity) : roomTxt(ok(c.roomTemp) ? c.roomTemp : last.roomTemp, ok(c.humidity) ? c.humidity : last.humidity))
-    : !ok(v) ? '–' : k === 'workload' ? (LOADS[v] || '–') : fmt(v, 1) + ((k === 'yield' || k === 'dose') ? ' g' : ' °C'));
+  const showVal = (k, v) => !ok(v) ? '–' : k === 'position' ? fmtDial(v, M) : k === 'workload' ? (LOADS[v] || '–') : k === 'humidity' ? fmt(v, 0) + ' % RH'
+    : fmt(v, 1) + ((k === 'yield' || k === 'dose') ? ' g' : ' °C');
+  const envStatus = k => (m.env[k] && m.env[k].measured ? 'measured' : 'benchmark');
   const rem = delta - parts.reduce((t, p) => t + p.notch, 0);
   const breakdown = parts.length
-    ? [...parts.map(p => ({ label: `${NAMES[p.k]} ${showVal(p.k, p.from, 'from')} → ${showVal(p.k, p.to, 'to')}`, move: word(p.notch) })),
-       { label: `Shot time against your ${hasBand ? `${fmt(tLo, 0)}–${fmt(tHi, 0)}` : fmt(target)} s target`, move: word(rem) }]
+    ? [...parts.map(p => ({ label: `${NAMES[p.k]} ${showVal(p.k, p.from)} → ${showVal(p.k, p.to)}`, move: word(p.notch), status: ENV.includes(p.k) ? envStatus(p.k) : null })),
+       { label: `Shot time against your ${hasBand ? `${fmt(tLo, 0)}–${fmt(tHi, 0)}` : fmt(target)} s target`, move: word(rem), status: null }]
     : [];
 
-  const finerStep = b1 > 0 ? 1 : -1;
-  const doserPerNotch = (m.rate && ok(dose)) ? dose / m.rate(s0 + finerStep) - dose / m.rate(s0) : null;
+  // ---- confidence and source ----
+  const envUsed = parts.filter(p => ENV.includes(p.k));
+  const envBench = envUsed.some(p => envStatus(p.k) === 'benchmark');
+  let source = m.slopeSource === 'benchmark' ? 'guidance' : envUsed.length ? (envBench ? 'benchmarkEnv' : 'environment') : 'grinder';
+  if (anchor && anchor.kind === 'shot' && m.slopeSource !== 'benchmark') source = 'grinder';
   const rangeNotch = ok(m.sigma) ? m.sigma / Math.abs(b1) : null;
   const rangeQ = rangeNotch !== null ? Math.round(rangeNotch * QM) : 0;
+  let confidence;
+  if (m.slopeSource === 'benchmark' || m.n < 3 || (envBench && !(anchor && anchor.kind === 'shot'))) confidence = 'Low';
+  else if (m.n >= 6 && rangeNotch !== null && rangeNotch * M <= 1) confidence = 'High';
+  else confidence = 'Moderate';
+  const enoughHistory = !(cal && confidence === 'Low');
 
-  // DOSE TIME: last shot's doser time scaled to the target dose, plus time for any real change
-  // in burr gap. A workload correction only restores the gap, so it is left out here.
-  const lastR = P.filter(s => ok(s.dose) && ok(s.doserTime) && s.doserTime > 0).slice(-1)[0];
+  // ---- doser time: target dose ÷ grind rate at the new setting ----
+  const finerStep = b1 > 0 ? 1 : -1;
+  const doserPerNotch = (m.rate && ok(dose)) ? dose / m.rate(s0 + finerStep) - dose / m.rate(s0) : null;
+  const Pd = [...P, ...(calRow ? [calRow] : [])];
+  const lastR = Pd.filter(s => ok(s.dose) && ok(s.doserTime) && s.doserTime > 0).slice(-1)[0];
   const kRule = num(rules.doserNotch);
   let kDoser = null, kSrc = '';
   if (ok(kRule) && kRule > 0) { kDoser = kRule; kSrc = 'your rule'; }
   else if (doserPerNotch !== null && Math.abs(doserPerNotch) >= 0.02) { kDoser = doserPerNotch; kSrc = 'learned from your shots'; }
-  let doser = null, finerGap = 0, doserUnknown = false;
+  let doser = null, doserUnknown = false, finerGap = 0;
   if (lastR && ok(dose)) {
     const loadNotch = (parts.find(p => p.k === 'workload') || {}).notch || 0;
     finerGap = ((s0 - lastR.setting) - loadNotch) * finerStep;
@@ -262,83 +385,73 @@ export function recommend({ shots, rules, now, quick }) {
       ? { match: true, value: best, text: `Use preset ${fmt(best)} s` }
       : { match: false, value: best, text: `No preset matches. Set ${fmt(doser)} s (preset ${fmt(best)} s would give about ${fmt(rateNow * best)} g)` };
   }
-  const doserMove = lastR && doser !== null ? Math.round((doser - lastR.doserTime) * 10) / 10 : null;
 
-  const settings = m.L.map(s => s.setting), lo = Math.min(...settings), hi = Math.max(...settings), span = hi - lo;
-  const lastTaste = shots[shots.length - 1].taste;
-
+  const settings = m.L.map(s => s.setting), sLo = Math.min(...settings), sHi = Math.max(...settings), span = sHi - sLo;
+  const lastTaste = shots.length ? shots[shots.length - 1].taste : '';
   return {
     status: 'ready', M, model: m,
-    dial: { value: s0, text: fmtDial(s0, M), words: dialWords(s0, M), range: rangeQ >= 1 ? marksText(rangeQ / QTR) : null,
-            anchor: anchorLabel, move, capped, breakdown,
-            anchorValue: anchorS, anchorText: fmtDial(anchorS, M),
-            moveShort: Math.abs(delta) < 0.5 / QM ? 'hold' : word(delta),
+    dial: { value: s0, text: fmtDial(s0, M), entry: toEntry(s0, M), words: dialWords(s0, M), range: rangeQ >= 1 ? marksText(rangeQ / QTR) : null,
+            anchor: anchorLabel, move, capped, conservative, breakdown, delta,
+            anchorValue: anchorS, anchorText: fmtDial(anchorS, M), fromText: fmtDial(fromS, M),
+            moveShort: isHold ? 'hold' : word(delta),
             reason: (() => { const p = [...parts].sort((a, b) => Math.abs(b.notch) - Math.abs(a.notch))[0];
-              return p ? `${NAMES[p.k]} ${showVal(p.k, p.from, 'from')} → ${showVal(p.k, p.to, 'to')}: ${word(p.notch)}` : ''; })() },
-    target, targetLo: hasBand ? tLo : null, targetHi: hasBand ? tHi : null, inBand, ifUnchanged: expected,
+              return p ? `${NAMES[p.k]} ${showVal(p.k, p.from)} → ${showVal(p.k, p.to)}: ${word(p.notch)}` : ''; })() },
+    target, targetLo: hasBand ? tLo : null, targetHi: hasBand ? tHi : null, lo, hi, inRange, inBand: inRange, ifUnchanged: expected, predictedTime: expected + b1 * delta,
+    confidence, source, sourceText: SOURCES[source], enoughHistory,
+    slopeSource: m.slopeSource, env: m.env,
     finerIsHigher: b1 > 0,
+    direction: b1 < 0 ? 'Lower numbers run slower on this grinder.' : 'Higher numbers run slower on this grinder.',
     dose: { seconds: doser, preset, lastSeconds: lastR ? lastR.doserTime : null, lastGrams: lastR ? lastR.dose : null,
-            change: doserMove, perNotch: kDoser, perNotchSource: kSrc, unknownPerNotch: doserUnknown, gapNotches: finerGap },
+            change: lastR && doser !== null ? Math.round((doser - lastR.doserTime) * 10) / 10 : null, perNotch: kDoser, perNotchSource: kSrc, unknownPerNotch: doserUnknown, gapNotches: finerGap },
     secondsPerNotch: Math.abs(b1), secondsPerMark: Math.abs(b1) / M, secondsPerQuarter: Math.abs(b1) / M / QTR,
     shotsUsed: m.n, fitPercent: m.r2 !== null && m.n > 2 ? Math.round(Math.max(0, m.r2) * 100) : null,
-    direction: b1 < 0 ? 'Lower numbers run slower on this grinder.' : 'Higher numbers run slower on this grinder.',
-    outside: s0 < lo - span * 0.5 || s0 > hi + span * 0.5,
-    tasteHint: lastTaste === 'sour' ? 'Your last shot tasted sour. Try a target 2–3 s longer or a longer ratio.'
-      : lastTaste === 'bitter' ? 'Your last shot tasted bitter. Try a target 2–3 s shorter or a shorter ratio.' : '',
+    outside: span > 0 && (s0 < sLo - span * 0.5 || s0 > sHi + span * 0.5),
+    tasteHint: lastTaste === 'sour' ? 'Last shot tasted sour. Try a target 2–3 s longer or a longer ratio.'
+      : lastTaste === 'bitter' ? 'Last shot tasted bitter. Try a target 2–3 s shorter or a shorter ratio.' : '',
   };
 }
 
 /* ---------------- insights ---------------- */
 
-/**
- * What the shots say so far, for the Insights screen.
- * accuracy: average seconds away from target per week (oldest first, up to 6 weeks)
- * effects:  seconds of extraction for a typical change, learned from the shots
- */
-export function insights({ shots, rules }) {
+export function insights({ shots, grinderShots, rules, gauge = true }) {
   const M = dialMarks(rules);
-  const hEq = num(rules.humEq), H = ok(hEq) && hEq > 0 ? hEq : 12;
-  const hs = shots.map(s => s.humidity).filter(ok), hFill = hs.length ? avg(hs) : 50;
-  const climateOf = (t, h) => (ok(t) ? t + ((ok(h) ? h : hFill) - 50) / H : null);
-  const P = shots.map(s => ({ ...s, setting: fromDial(s.setting, M), climate: climateOf(s.roomTemp, s.humidity) }));
-  const m = fit(P, priorsFrom(rules));
-
+  const P = prepare(shots, M, gauge), G = grinderShots ? prepare(grinderShots, M, gauge) : P;
+  const thisCoffee = P[0] && P[0].coffeeId;
+  const m = fit(P, benchmarks(rules), pooledSlope(G.filter(s => !thisCoffee || s.coffeeId !== thisCoffee)), gauge);
   const weekStart = ts => { const d = new Date(ts); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d.getTime(); };
+  const tgt = s => (ok(s.target) ? s.target : 30);
   const byWeek = new Map();
   shots.filter(s => ok(s.time) && s.ts).forEach(s => {
-    const k = weekStart(s.ts), tgt = ok(s.target) ? s.target : 28;
+    const k = weekStart(s.ts);
     if (!byWeek.has(k)) byWeek.set(k, []);
-    byWeek.get(k).push(Math.abs(s.time - tgt));
+    byWeek.get(k).push(Math.abs(s.time - tgt(s)));
   });
-  const accuracy = [...byWeek.entries()].sort((a, b) => a[0] - b[0]).slice(-6)
-    .map(([k, v]) => ({ week: k, off: avg(v) }));
-
+  const accuracy = [...byWeek.entries()].sort((a, b) => a[0] - b[0]).slice(-6).map(([k, v]) => ({ week: k, off: avg(v) }));
   let effects = [];
   if (m.ok) {
     const b = name => m.beta[2 + COV.indexOf(name)];
-    effects = [
-      { label: 'Grind: 1 mark finer', seconds: Math.abs(m.beta[1]) / M },
-      { label: 'Room climate: +2 °C', seconds: b('climate') / SCALE.climate * 2 },
-      { label: `Humidity: +5 % RH`, seconds: b('climate') / SCALE.climate * (5 / H) },
-      { label: 'Group head: +1 °C', seconds: b('groupTemp') / SCALE.groupTemp },
-      { label: 'Dose: +0.5 g', seconds: b('dose') / SCALE.dose * 0.5 },
-    ];
-    if (rules.burr === 'fan') effects.splice(3, 0, { label: 'Workload: one step busier', seconds: b('workload') });
+    const st = k => (m.env[k] && m.env[k].measured ? 'measured' : 'benchmark');
+    effects = [{ label: 'Grind: 1 mark finer', seconds: Math.abs(m.beta[1]) / M, status: m.slopeSource === 'benchmark' ? 'benchmark' : 'measured' }];
+    if (gauge) effects.push(
+      { label: 'Room temperature: +2 °C', seconds: b('roomTemp') / SCALE.roomTemp * 2, status: st('roomTemp') },
+      { label: 'Humidity: +10 % RH', seconds: b('humidity') / SCALE.humidity * 10, status: st('humidity') });
+    effects.push({ label: 'Group head: +1 °C', seconds: b('groupTemp') / SCALE.groupTemp, status: null },
+      { label: 'Dose: +0.5 g', seconds: b('dose') / SCALE.dose * 0.5, status: null });
+    if (rules.burr === 'fan') effects.splice(gauge ? 3 : 1, 0, { label: 'Workload: one step busier', seconds: b('workload'), status: null });
   }
   const recent = shots.filter(s => ok(s.time)).slice(-12);
-  const tgt = s => (ok(s.target) ? s.target : 28);
   const offs = recent.map(s => Math.abs(s.time - tgt(s)));
   return {
-    accuracy, effects,
-    lastShots: recent,
+    accuracy, effects, lastShots: recent, tangled: !!(m.env && m.env.tangled),
     avgOff: offs.length ? avg(offs) : null,
     balancedPct: recent.length ? Math.round(100 * recent.filter(s => s.taste === 'balanced').length / recent.length) : null,
     improvementPct: accuracy.length >= 2 && accuracy[0].off > 0 ? Math.round(100 * (accuracy[accuracy.length - 1].off - accuracy[0].off) / accuracy[0].off) : null,
+    predictions: shots.filter(s => ok(s.predTime) && ok(s.time)).slice(-12).map(s => ({ ts: s.ts, pred: s.predTime, actual: s.time })),
   };
 }
 
 /** 16 example shots on a Mythos One, for "Explore with sample shots". Marked sample: true. */
-export function sampleShots(grinderId) {
+export function sampleShots(grinderId, coffeeId) {
   const rows = [ // setting, room, humidity, time, taste, doser, dose
     [4.3, 19, 50, 24.5, 'sour', 6.0, 17.8], [4.2, 19, 51, 26.0, 'sour', 6.0, 17.9], [4.1, 20, 52, 28.5, 'balanced', 6.1, 18.0],
     [4.1, 21, 55, 27.0, 'balanced', 6.1, 18.0], [4.0, 21, 56, 30.5, 'bitter', 6.2, 18.1], [4.1, 22, 58, 26.5, 'sour', 6.1, 17.9],
@@ -349,8 +462,8 @@ export function sampleShots(grinderId) {
   ];
   const start = Date.now() - 24 * 864e5;
   return rows.map((r, i) => ({
-    id: 'sample' + i, sample: true, grinderId, bean: 'Ethiopia Guji', setting: r[0], roomTemp: r[1], humidity: r[2], time: r[3],
-    taste: r[4], doserTime: r[5], dose: r[6], yield: 36, groupTemp: 93, workload: 1, target: 28, notes: '', roast: '',
+    id: 'sample' + i, sample: true, grinderId, coffeeId, bean: 'Ethiopia Guji', setting: r[0], roomTemp: r[1], humidity: r[2], time: r[3],
+    taste: r[4], doserTime: r[5], dose: r[6], yield: 36, groupTemp: 93, workload: 1, target: 28, notes: '',
     ts: new Date(start + i * 1.5 * 864e5).toISOString(),
   }));
 }

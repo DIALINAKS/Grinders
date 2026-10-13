@@ -1,13 +1,17 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, Image, ScrollView, Pressable, SafeAreaView, StatusBar, Platform, KeyboardAvoidingView, StyleSheet } from 'react-native';
 import { C, S, R } from './src/theme';
-import { load, save, newId } from './src/store';
-import { Chips, Label } from './src/components/ui';
+import { load, save } from './src/store';
+import { newId, epochShots, activeCal, grinderCoffees, coffeeById, saveCalibration, recalibrate, withSample, withoutSample } from './src/model';
+import { Chips, Label, Card, Body, Button } from './src/components/ui';
 import { Icon } from './src/components/visuals';
-import { tierOf, usageText, activeGrinders, reconcileGrinders, shotLimitReached, sampleShots } from './src/engine';
+import { tierOf, usageText, activeGrinders, reconcileGrinders, shotLimitReached, fmt } from './src/engine';
 import Welcome from './src/screens/Welcome';
 import Setup from './src/screens/Setup';
-import DialIn from './src/screens/DialIn';
+import Home from './src/screens/Home';
+import NewCoffee from './src/screens/NewCoffee';
+import Adjust from './src/screens/Adjust';
+import ShotLoop from './src/screens/ShotLoop';
 import History from './src/screens/History';
 import Insights from './src/screens/Insights';
 import Rules from './src/screens/Rules';
@@ -15,16 +19,17 @@ import Account from './src/screens/Account';
 import ArchivePick from './src/screens/ArchivePick';
 
 const TABS = [
-  { key: 'dial', label: 'DIAL-IN', icon: 'dial' },
+  { key: 'home', label: 'DIAL IN', icon: 'dial' },
   { key: 'history', label: 'HISTORY', icon: 'list' },
   { key: 'insights', label: 'INSIGHTS', icon: 'bars' },
   { key: 'account', label: 'ACCOUNT', icon: 'user' },
 ];
 
 export default function App() {
-  const [st, setSt] = useState(null);         // saved state, null while loading
-  const [tab, setTab] = useState('dial');
+  const [st, setSt] = useState(null);           // saved state, null while loading
+  const [tab, setTab] = useState('home');
   const [overlay, setOverlay] = useState(null); // null | 'register' | 'rules' | 'welcome'
+  const [flow, setFlow] = useState(null);       // null | {kind:'new'|'adjust'|'loop'|'saved', …}
 
   useEffect(() => { load().then(setSt); }, []);
   const update = useCallback(fn => setSt(prev => { const next = fn(prev); save(next); return next; }), []);
@@ -35,51 +40,57 @@ export default function App() {
     return (
       <Shell>
         <Welcome bill={st.bill} onBill={b => update(s => ({ ...s, bill: b }))}
-          onChoose={t => { update(s => applyTier(s, t)); setOverlay(null); setTab('dial'); }} />
+          onChoose={t => { update(s => applyTier(s, t)); setOverlay(null); setTab('home'); }} />
       </Shell>
     );
   }
 
+  /* ---------- derived ---------- */
   const grinders = st.grinders;
   const hasSample = grinders.some(g => g.sample);
   const grinder = grinders.find(g => g.id === st.grinderId) || activeGrinders(grinders)[0] || grinders[0] || null;
-  const gShots = grinder ? st.shots.filter(s => s.grinderId === grinder.id).sort((a, b) => (a.ts < b.ts ? -1 : 1)) : [];
-  const coffees = [...new Set(gShots.map(s => s.bean))];
-  const picked = grinder ? st.coffee[grinder.id] : undefined; // '' = new coffee
-  const coffee = picked === '' ? '' : (picked && coffees.includes(picked) ? picked : (gShots.length ? gShots[gShots.length - 1].bean : ''));
-  const profileShots = gShots.filter(s => s.bean === coffee);
+  const epoch = epochShots(st, grinder);
+  const coffees = grinderCoffees(st, grinder);
+  const items = coffees.filter(c => !c.archived).map(c => ({ coffee: c, cal: activeCal(st, grinder, c.id) })).filter(i => i.cal);
+  const coffeeShots = cid => epoch.filter(s => s.coffeeId === cid);
+  const picked = grinder ? st.coffee[grinder.id] : null;
+  const viewCoffee = coffees.find(c => c.id === picked) || coffees.find(c => !c.archived) || null;
+  const run = st.run && grinder && st.run.grinderId === grinder.id ? st.run : null;
+  const runShots = run ? st.shots.filter(s => s.runId === run.id).sort((a, b) => (a.ts < b.ts ? -1 : 1)) : [];
   const recon = reconcileGrinders(st.tier, grinders);
   const blocked = grinder && grinder.sample ? null
     : shotLimitReached(st.tier, st.shots) ? 'limit' : grinder && grinder.archived ? 'archived' : null;
 
   /* ---------- actions ---------- */
-  const registerGrinder = (name, model) => {
-    const g = { id: newId('g'), name, model, rules: {}, archived: false, createdAt: new Date().toISOString() };
+  const setGrinder = (id, patch) => update(s => ({ ...s, grinders: s.grinders.map(g => (g.id === id ? { ...g, ...patch } : g)) }));
+  const registerGrinder = (name, model, gauge) => {
+    const g = { id: newId('g'), name, model, rules: {}, gauge, lastSetting: null, archived: false, createdAt: new Date().toISOString() };
     update(s => ({ ...s, grinders: [...s.grinders, g], grinderId: g.id }));
-    setOverlay(null); setTab('dial');
+    setOverlay(null); setFlow(null); setTab('home');
   };
-  const loadSample = () => {
-    const id = 'g_sample';
-    update(s => ({
-      ...s, grinderId: id, coffee: { ...s.coffee, [id]: 'Ethiopia Guji' },
-      grinders: [...s.grinders.filter(g => g.id !== id), { id, name: 'Mythos One (sample)', model: 'Mythos One', rules: {}, sample: true, createdAt: new Date().toISOString() }],
-      shots: [...s.shots.filter(x => !x.sample), ...sampleShots(id)],
-    }));
-    setOverlay(null); setTab('dial');
+  const createCoffee = fields => {
+    const id = newId('c');
+    update(s => ({ ...s, coffees: [...s.coffees, { ...fields, id, archived: false, sample: false, createdAt: new Date().toISOString() }], coffee: { ...s.coffee, [grinder.id]: id } }));
+    return id;
   };
-  const removeSample = () => update(s => ({
-    ...s, grinders: s.grinders.filter(g => !g.sample), shots: s.shots.filter(x => !x.sample),
-    grinderId: s.grinderId === 'g_sample' ? null : s.grinderId,
-  }));
-  const saveShot = shot => {
+  const startRun = (r, first) => {
+    update(s => ({ ...s, run: { ...r, id: newId('r'), grinderId: grinder.id, startedAt: new Date().toISOString(), first: first || null }, coffee: { ...s.coffee, [grinder.id]: r.coffeeId } }));
+    setFlow({ kind: 'loop' });
+  };
+  const recordShot = fields => {
+    const c = coffeeById(st, run.coffeeId);
     update(s => ({
-      ...s, shots: [...s.shots, { ...shot, id: newId('s'), grinderId: grinder.id, grinder: grinder.name, ts: new Date().toISOString(), sample: !!grinder.sample }],
-      coffee: { ...s.coffee, [grinder.id]: shot.bean },
+      ...s,
+      shots: [...s.shots, { ...fields, id: newId('s'), grinderId: grinder.id, grinder: grinder.name, coffeeId: run.coffeeId, bean: c ? c.name : '', runId: run.id, mode: run.mode, ts: new Date().toISOString(), sample: !!grinder.sample }],
+      grinders: s.grinders.map(g => (g.id === grinder.id ? { ...g, lastSetting: fields.setting } : g)),
     }));
   };
+  const saveCal = confidence => { const cid = run.coffeeId; update(s => saveCalibration(s, run, confidence)); setFlow({ kind: 'saved', coffeeId: cid }); };
+  const restartRun = () => { const cid = run.coffeeId; update(s => ({ ...s, run: null })); setFlow({ kind: 'new', preset: { coffeeId: cid } }); };
   const deleteShot = id => update(s => ({ ...s, shots: s.shots.filter(x => x.id !== id) }));
-  const changeRules = rules => update(s => ({ ...s, grinders: s.grinders.map(g => (g.id === grinder.id ? { ...g, rules } : g)) }));
+  const changeRules = rules => setGrinder(grinder.id, { rules });
   const keepGrinder = id => update(s => ({ ...s, grinderId: id, grinders: s.grinders.map(g => (g.archived || g.sample ? g : { ...g, archived: g.id !== id })) }));
+  const go = t => { setOverlay(null); setTab(t); };
 
   /* ---------- body ---------- */
   let body;
@@ -87,27 +98,57 @@ export default function App() {
     body = <ArchivePick tier={st.tier} grinders={grinders.filter(g => !g.sample)} shots={st.shots} onKeep={keepGrinder} />;
   } else if (tab === 'account') {
     body = <Account tier={st.tier} bill={st.bill} grinders={grinders} shots={st.shots} hasSample={hasSample}
-      onBill={b => update(s => ({ ...s, bill: b }))} onTier={t => update(s => applyTier(s, t))} onRemoveSample={removeSample} />;
+      onBill={b => update(s => ({ ...s, bill: b }))} onTier={t => update(s => applyTier(s, t))} onRemoveSample={() => { update(withoutSample); setFlow(null); }} />;
   } else if (!grinder || overlay === 'register') {
     body = <Setup first={!grinder} tier={st.tier} grinders={grinders} hasSample={hasSample} onRegister={registerGrinder}
-      onSample={loadSample} onClose={() => setOverlay(null)} onSeePlans={() => { setOverlay(null); setTab('account'); }} />;
+      onSample={() => { update(withSample); setOverlay(null); setFlow(null); setTab('home'); }} onClose={() => setOverlay(null)} onSeePlans={() => go('account')} />;
   } else if (overlay === 'rules') {
     body = (
       <View style={{ gap: S.md }}>
         <Pressable onPress={() => setOverlay(null)}><Text style={st_.back}>‹ Back</Text></Pressable>
-        <Rules grinder={grinder} onChange={changeRules} readOnly={grinder.archived} />
+        <Rules grinder={grinder} onChange={changeRules} readOnly={grinder.archived}
+          onGauge={v => setGrinder(grinder.id, { gauge: v })}
+          onRecalibrate={reason => { update(s => recalibrate(s, grinder.id, reason)); setFlow(null); setOverlay(null); }} />
       </View>
     );
-  } else if (tab === 'dial') {
-    body = <DialIn grinder={grinder} coffee={coffee} shots={profileShots} blocked={blocked} onSaveShot={saveShot}
-      onChangeRules={changeRules} onOpenRules={() => setOverlay('rules')} onSeePlans={() => setTab('account')} />;
+  } else if (tab === 'home') {
+    if (flow && flow.kind === 'loop' && run) {
+      body = <ShotLoop grinder={grinder} coffee={coffeeById(st, run.coffeeId) || { name: 'Coffee' }} run={run} runShots={runShots}
+        coffeeShots={coffeeShots(run.coffeeId)} grinderShots={epoch} first={run.first} blocked={blocked}
+        onRecord={recordShot} onSave={saveCal} onRestart={restartRun} onStop={() => setFlow(null)}
+        onChangeRules={changeRules} onSeePlans={() => go('account')} />;
+    } else if (flow && flow.kind === 'new') {
+      body = <NewCoffee grinder={grinder} coffees={st.coffees} preset={flow.preset} onCreateCoffee={createCoffee}
+        onStart={r => startRun(r, null)} onCancel={() => setFlow(null)} />;
+    } else if (flow && flow.kind === 'adjust') {
+      body = <Adjust grinder={grinder} items={items} startCoffeeId={flow.coffeeId} coffeeShots={coffeeShots} grinderShots={epoch}
+        onStart={startRun} onCancel={() => setFlow(null)} onNewCoffee={() => setFlow({ kind: 'new' })} />;
+    } else if (flow && flow.kind === 'saved') {
+      const c = coffeeById(st, flow.coffeeId), k = activeCal(st, grinder, flow.coffeeId);
+      body = (
+        <Card tone="accent">
+          <Text style={st_.h}>{c ? c.name.toUpperCase() : 'COFFEE'} · SAVED</Text>
+          <Body>Your coffee is dialled in. We've saved your settings so you can return to this coffee in the future.</Body>
+          {k ? <Body muted>Setting {k.setting} · {fmt(k.dose)} g → {fmt(k.yield)} g · {fmt(k.time)} s{k.doserTime != null ? ` · doser ${fmt(k.doserTime)} s` : ''}{k.roomTemp != null ? ` · ${fmt(k.roomTemp)} °C` : ''}{k.humidity != null ? ` · ${fmt(k.humidity, 0)} % RH` : ''} · confidence {k.confidence}</Body> : null}
+          <Button title="Back to Dial In" onPress={() => setFlow(null)} />
+        </Card>
+      );
+    } else {
+      body = <Home grinder={grinder} items={items} run={run} runCoffee={run ? coffeeById(st, run.coffeeId) : null} runCount={runShots.length}
+        onNew={() => setFlow({ kind: 'new' })} onAdjust={cid => setFlow({ kind: 'adjust', coffeeId: cid })} onContinue={() => setFlow({ kind: 'loop' })}
+        onGauge={v => setGrinder(grinder.id, { gauge: v })}
+        onArchiveCoffee={id => update(s => ({ ...s, coffees: s.coffees.map(c => (c.id === id ? { ...c, archived: true } : c)) }))} />;
+    }
   } else if (tab === 'history') {
-    body = <History shots={profileShots} onDelete={deleteShot} readOnly={grinder.archived} />;
+    body = <History shots={viewCoffee ? st.shots.filter(s => s.grinderId === grinder.id && s.coffeeId === viewCoffee.id).sort((a, b) => (a.ts < b.ts ? -1 : 1)) : []}
+      epochStart={grinder.epochStart} onDelete={deleteShot} readOnly={grinder.archived} />;
   } else {
-    body = <Insights grinder={grinder} shots={profileShots} />;
+    body = <Insights grinder={grinder} shots={viewCoffee ? coffeeShots(viewCoffee.id) : []} grinderShots={epoch} />;
   }
 
-  const showPickers = grinder && !recon.mustChoose && !overlay && tab !== 'account';
+  const inFlow = tab === 'home' && flow && !overlay;
+  const showGrinders = grinder && !recon.mustChoose && !overlay && tab !== 'account' && !inFlow;
+  const showCoffees = showGrinders && (tab === 'history' || tab === 'insights') && coffees.length > 0;
   const ordered = [...grinders.filter(g => !g.archived && !g.sample), ...grinders.filter(g => g.sample), ...grinders.filter(g => g.archived && !g.sample)];
 
   return (
@@ -116,29 +157,31 @@ export default function App() {
         <View style={st_.header}>
           <Image source={require('./assets/logo.png')} style={st_.logo} />
           <View style={{ flex: 1 }}>
-            <Text style={st_.title}>GRIND DIAL-IN</Text>
+            <Text style={st_.title}>DIAL IN</Text>
             <Text style={st_.sub}>BARISTA LIFE</Text>
           </View>
-          <Pressable onPress={() => setTab('account')} style={st_.planPill} hitSlop={6}>
+          <Pressable onPress={() => go('account')} style={st_.planPill} hitSlop={6}>
             <Text style={st_.planText}>{tierOf(st.tier).label}</Text>
           </Pressable>
         </View>
 
-        {showPickers ? (
+        {showGrinders ? (
           <View style={{ gap: S.md }}>
             <View>
               <Label>Grinder</Label>
               <Chips
                 items={ordered.map(g => ({ key: g.id, label: g.archived ? `${g.name} · archived` : g.name, dim: g.archived }))}
-                value={grinder.id} onChange={id => update(s => ({ ...s, grinderId: id }))}
+                value={grinder.id} onChange={id => { update(s => ({ ...s, grinderId: id })); setFlow(null); }}
                 addLabel="Register" onAdd={() => setOverlay('register')} />
             </View>
-            <View>
-              <Label>Coffee</Label>
-              <Chips items={[...coffees, ...(coffee === '' ? [] : [])].map(c => ({ key: c, label: c }))} value={coffee}
-                onChange={c => update(s => ({ ...s, coffee: { ...s.coffee, [grinder.id]: c } }))}
-                addLabel="New coffee" onAdd={() => { update(s => ({ ...s, coffee: { ...s.coffee, [grinder.id]: '' } })); setTab('dial'); }} />
-            </View>
+            {showCoffees ? (
+              <View>
+                <Label>Coffee</Label>
+                <Chips items={coffees.map(c => ({ key: c.id, label: c.archived ? `${c.name} · archived` : c.name, dim: c.archived }))} value={viewCoffee && viewCoffee.id}
+                  onChange={id => update(s => ({ ...s, coffee: { ...s.coffee, [grinder.id]: id } }))} />
+              </View>
+            ) : null}
+            {tab === 'home' ? <Pressable onPress={() => setOverlay('rules')}><Text style={st_.link}>Grinder settings for {grinder.name}</Text></Pressable> : null}
           </View>
         ) : null}
 
@@ -155,7 +198,7 @@ export default function App() {
           {TABS.map(t => {
             const on = tab === t.key && !overlay;
             return (
-              <Pressable key={t.key} onPress={() => { setOverlay(null); setTab(t.key); }} style={[st_.tab, on && st_.tabOn]}
+              <Pressable key={t.key} onPress={() => { if (t.key === 'home' && tab === 'home' && flow && flow.kind !== 'loop') setFlow(null); go(t.key); }} style={[st_.tab, on && st_.tabOn]}
                 accessibilityRole="tab" accessibilityState={{ selected: on }}>
                 <Icon name={t.icon} color={on ? C.white : C.muted} />
                 <Text style={[st_.tabText, on && { color: C.white }]}>{t.label}</Text>
@@ -193,9 +236,11 @@ const st_ = StyleSheet.create({
   logo: { width: 42, height: 42, borderRadius: 10 },
   title: { color: C.ink, fontSize: 20, fontWeight: '800', letterSpacing: 1.5 },
   sub: { color: C.muted, fontSize: 10, fontWeight: '700', letterSpacing: 2.5 },
+  h: { color: C.ink, fontSize: 15, fontWeight: '800', letterSpacing: 0.8 },
   planPill: { backgroundColor: C.surface2, borderRadius: R.pill, paddingHorizontal: 12, paddingVertical: 5 },
   planText: { color: C.ink, fontWeight: '700', fontSize: 12 },
   back: { color: C.accentBright, fontWeight: '700', fontSize: 15 },
+  link: { color: C.accentBright, fontWeight: '700', fontSize: 13 },
   sampleNote: { color: C.warn, fontSize: 12 },
   foot: { color: C.faint, fontSize: 11, textAlign: 'center' },
   tabs: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: C.line, backgroundColor: C.surface, paddingHorizontal: 6, paddingTop: 6, paddingBottom: Platform.OS === 'ios' ? 2 : 8 },

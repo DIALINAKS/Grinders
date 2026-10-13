@@ -1,31 +1,28 @@
-# Grind Dial-In: Expo app (testing build)
+# Dial In: Expo app (testing build)
 
 *Precision in every shot.* · Barista Life Ltd
 
-This is the React Native / Expo version of Grind Dial-In. It runs on iPhone and Android, and is set up for App Store release through Expo (including Expo Launch).
+This is the React Native / Expo version of Dial In. It runs on iPhone and Android, and is set up for App Store release through Expo (including Expo Launch).
 
 ## What's in this build
 
-- **Welcome screen and plans:** Free, Pro and Business, with a Monthly/Annual switch, on black with the Fine Dot logo.
-- **First run:** "Set up your grinder", or "Explore with sample shots" (16 example shots that don't count towards a plan).
-- **Testing mode:** every plan is free; switch plans any time in Account. No payments.
-- **Grinder registry:** each grinder gets its own ID. Known models (Mythos One, Compak E6) fill in their settings.
-- **Dial-in screen:**
-  - The grinder setting drawn on a dial gauge, with "Was 4.0½ · 1½ marks finer" and a one-line reason.
-  - **Dose time** at equal size.
-  - "If you don't move it" prediction.
-  - **Pull it and log the shot** button.
-  - + / − steppers for the conditions, workload, quick adjust (folded away), why this setting, and a last 12 shots chart.
-- **Dial-in flow:** 1 Before the shot (grinder reading, dose time, dose weight, room), 2 Run it (extraction time, yield, taste), 3 Change (new grind and dose time, with dose time per notch set right under it).
-- **History, Insights** ("Getting closer" week by week, "What moves your shot") and **Account** tabs. Grinder rules open from the Dial-in screen.
-- **Plan limits:**
-  - Free: 20 shots, 1 grinder.
-  - Pro: 1 grinder.
-  - Business: unlimited grinders.
-  - On a downgrade, the app asks which grinder to keep. The others are archived read-only and restored when you upgrade again.
-- **Calibration engine** in `src/engine/index.js`: the same maths as the web prototype, checked by `tests/engine.test.mjs`.
+- **Welcome screen and plans:** Free, Pro and Business, with a Monthly/Annual switch. Testing mode: every plan is free, switch any time in Account.
+- **Two operating modes** on the Dial In tab:
+  - **Dial in a new coffee:** choose or create a coffee → confirm the dose (18 g default, fixed for the run, warning outside a tolerance) → targets (36 g, 28–32 s from pump on) → shot by shot until the time is in the band → **Save calibration**.
+  - **Adjust existing coffee:** pick a coffee with a saved calibration → "Is your grinder still at 6.5?" → room temperature and humidity (if the grinder has a gauge) → predicted setting and doser time before the first shot → verify with a shot.
+- **Every recommendation** shows the grind move, doser time to hold the target dose, a Confidence level (Low / Moderate / High), and what it is based on: initial calibration guidance, previously observed grinder behaviour, or historical environmental data.
+- **Coffee profiles:** name, roaster, origin, roast date; optional producer, variety, process, roast level, altitude, notes. Calibrations belong to one grinder + coffee and are never applied to another grinder. Coffees can be archived.
+- **Grinder profiles:** each grinder keeps its own history (two of the same model are separate). Settings screen has the dial layout, benchmarks, the temperature/humidity gauge yes/no, and **Recalibrate** after a burr change or service.
+- **History** (with predicted vs actual), **Insights** (what moves your shot, benchmark vs measured, prediction accuracy) and **Account** tabs.
+- **Data from the first build carries over:** typed coffee names become coffee profiles, and the latest in-band shot for each grinder + coffee becomes its saved calibration.
 
-**Not in this build yet:** user accounts, cloud sync and team sharing (data is saved on the phone only), and real subscriptions.
+## The calculation engine (`src/engine/index.js`)
+
+- **Grind response k** (extraction seconds per number) is fitted from that grinder's shots for the coffee. Before it is measured, the app borrows it from the grinder's other coffees, else uses the 10 s benchmark with a cautious half step (max ½ a number).
+- **Grind move** = (target time − expected time) ÷ k, from the grinder's confirmed current position, in quarter marks, max one number per shot. Inside the target band = hold.
+- **Room temperature (s per °C) and humidity (s per % RH)** are separate terms. Each starts at the benchmark (1 number per 4 °C; 12 % RH = 1 °C) and is replaced by the measured value as shots build. It is labelled "measured" once about 8 shots span 3 °C (or 15 % RH) and the two haven't simply moved together.
+- **Doser time** = target dose ÷ grind rate (g/s, measured from weighed doses) at the new setting.
+- Missing readings are never filled in; a grinder without a gauge ignores room conditions entirely. Older shots count less (30-day half-life) and a recalibration starts a fresh history.
 
 ## Try it on your phone
 
@@ -55,18 +52,19 @@ This is the React Native / Expo version of Grind Dial-In. It runs on iPhone and 
 npm test
 ```
 
-This runs the engine against results produced by the web prototype for the same shots (Mythos One and Compak E6 scenarios). It should print `All engine tests passed.`
+This checks the engine: the brief's 6.5 → 38 s / 6.7 → 33 s example, temperature-only, humidity-only and both, no invented readings, no-gauge grinders, grinder moved since saving, doser time, and plan rules. It should print `All 14 engine tests passed.`
 
 ## Project layout
 
 ```
-App.js                     screens, tabs, plan changes
+App.js                     tabs, the two modes, plan changes
 src/engine/index.js        calibration engine + membership rules (no UI code)
-src/store.js               on-phone storage (swap for a backend at launch)
+src/model.js               data helpers: migration, calibrations, recalibration, samples
+src/store.js               on-phone storage and the data model (swap for a backend at launch)
 src/theme.js               Fine Dot colours on black
 src/components/ui.js       shared fields, buttons, chips
 src/components/visuals.js  dial gauge, shots chart, bars, tab icons, steppers
-src/screens/               Welcome, Setup, DialIn, LogShot, History, Insights, Rules, Account, ArchivePick
+src/screens/               Welcome, Setup, Home, NewCoffee, Adjust, ShotLoop, History, Insights, Rules, Account, ArchivePick
 assets/                    logo, app icon, splash
 tests/engine.test.mjs      engine checks
 ```

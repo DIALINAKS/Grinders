@@ -5,7 +5,7 @@ import { Button, Segmented } from '../components/ui';
 import { priceText } from '../engine';
 
 const CARDS = [
-  { id: 'free', name: 'FREE', sub: 'Discover Grind Dial-In', limits: '1 Grinder | 20 Shots', cta: 'Get Started' },
+  { id: 'free', name: 'FREE', sub: 'Discover Dial In', limits: '1 Grinder | 20 Shots', cta: 'Get Started' },
   { id: 'pro', name: 'PRO', sub: 'Perfect your home espresso', limits: '1 Grinder | Unlimited Shots', cta: 'Choose Pro' },
   { id: 'business', name: 'BUSINESS', sub: 'Professional espresso calibration', limits: 'Unlimited Grinders | Unlimited Shots', cta: 'Choose Business' },
 ];
@@ -15,7 +15,7 @@ export default function Welcome({ bill, onBill, onChoose }) {
     <ScrollView style={{ flex: 1, backgroundColor: C.bg }} contentContainerStyle={st.wrap}>
       <View style={st.glow} />
       <Image source={require('../../assets/logo.png')} style={st.logo} accessibilityIgnoresInvertColors />
-      <Text style={st.title}>GRIND DIAL-IN</Text>
+      <Text style={st.title}>DIAL IN</Text>
       <Text style={st.tag}>Precision in every shot.</Text>
       <Text style={st.choose}>Choose your experience</Text>
       <View style={{ width: 220, marginBottom: S.lg }}>
