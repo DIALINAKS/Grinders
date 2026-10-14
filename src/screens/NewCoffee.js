@@ -68,7 +68,7 @@ export default function NewCoffee({ grinder, coffees, onCreateCoffee, onStart, o
           <Text style={st.h}>CONFIRM YOUR DOSE</Text>
           <Body>Before adjusting your grinder, ensure your dose is consistent. We recommend starting with 18 g and keeping this weight unchanged throughout calibration.</Body>
           <View style={st.steppers}>
-            <Stepper label="DOSE" unit="g" value={f.dose} onChange={set('dose')} step={0.5} />
+            <Stepper label="DOSE" unit="g" value={f.dose} onChange={set('dose')} step={0.1} />
             <Stepper label="TOLERANCE ±" unit="g" value={f.tol} onChange={set('tol')} step={0.1} />
           </View>
           <Body muted style={{ fontSize: 12 }}>The dose stays fixed for the whole calibration. If you change it, calibration starts again, because a change in both dose and grind makes it impossible to tell which one moved the time. You'll be warned when a weighed dose is outside the tolerance.</Body>
@@ -82,7 +82,7 @@ export default function NewCoffee({ grinder, coffees, onCreateCoffee, onStart, o
           <Text style={st.h}>SET YOUR TARGETS</Text>
           <Body muted>{chosen ? chosen.name + ' · ' : ''}Starting points you can change for any coffee.</Body>
           <View style={st.steppers}>
-            <Stepper label="YIELD" unit="g" value={f.yield} onChange={set('yield')} step={1} />
+            <Stepper label="YIELD" unit="g" value={f.yield} onChange={set('yield')} step={0.1} />
             <Stepper label="TIME FROM" unit="s" value={f.tLo} onChange={set('tLo')} step={1} decimals={0} />
             <Stepper label="TIME TO" unit="s" value={f.tHi} onChange={set('tHi')} step={1} decimals={0} />
           </View>

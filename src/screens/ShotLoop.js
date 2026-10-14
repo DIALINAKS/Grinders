@@ -141,7 +141,7 @@ export default function ShotLoop({ grinder, coffee, run, runShots, coffeeShots, 
 
           <View style={st.steppers}>
             <Stepper label="DOSE WEIGHED" unit={doseOff ? `outside ${fmt(run.dose)} ± ${fmt(run.tol)} g` : 'g'} value={f.dose} onChange={set('dose')} step={0.1} />
-            <Stepper label="YIELD IN CUP" unit="g" value={f.yieldOut} onChange={set('yieldOut')} step={0.5} />
+            <Stepper label="YIELD IN CUP" unit="g" value={f.yieldOut} onChange={set('yieldOut')} step={0.1} />
           </View>
           {doseOff ? <Text style={[st.small, { color: C.warn }]}>Dose is outside your tolerance. Keep it at {fmt(run.dose)} g so only the grind changes.</Text> : null}
 
