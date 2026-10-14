@@ -28,7 +28,7 @@ export default function Recommendation({ r, M, grinder, onChangeRules, compact }
   const rawRule = (grinder.rules || {}).doserNotch;
   let doseWhy;
   if (ds.seconds == null) doseWhy = 'Enter a doser time with your shot to get this.';
-  else if (ds.unknownPerNotch) doseWhy = 'Holding the dose time: set "dose time per notch" below so it follows the grind.';
+  else if (ds.unknownPerNotch) doseWhy = `Kept at ${fmt(ds.seconds)} s for now. A finer grind comes out slower, so the doser usually needs a little longer. Dial In learns how much from your weighed doses, or you can set it in the box just below.`;
   else if (Math.abs(ds.gapNotches || 0) < 1e-6) doseWhy = `Keeps ${fmt(ds.lastGrams)} g → your target dose.`;
   else if (!ds.change) doseWhy = `Grind move too small to change the dose time (${fmt(ds.perNotch, 2)} s per notch, ${ds.perNotchSource}).`;
   else doseWhy = `${ds.change > 0 ? '+' : ''}${fmt(ds.change)} s for the grind move (${fmt(ds.perNotch, 2)} s per notch, ${ds.perNotchSource}).`;
@@ -48,11 +48,16 @@ export default function Recommendation({ r, M, grinder, onChangeRules, compact }
         <Text style={st.tileLabel}>DOSE TIME</Text>
         <Text style={st.doseBig}>{ds.seconds != null ? fmt(ds.seconds) : '–'}<Text style={st.unit}>{ds.seconds != null ? ' s' : ''}</Text></Text>
         {ds.preset ? <Text style={st.tileSub}>{ds.preset.text}</Text> : null}
-        <Text style={[st.tileSub, ds.unknownPerNotch && { color: C.warn }]}>{doseWhy}</Text>
+        <Text style={st.tileSub}>{doseWhy}</Text>
         {!compact && onChangeRules ? (
-          <View style={st.perNotch}>
-            <Stepper label="DOSE TIME PER NOTCH FINER" unit={rawRule ? 'seconds · your setting' : ds.perNotch ? `seconds · blank uses ${fmt(ds.perNotch, 2)} learned` : 'seconds · not set yet'}
-              value={rawRule || ''} onChange={v => onChangeRules({ ...(grinder.rules || {}), doserNotch: v })} step={0.1} decimals={1} />
+          <View style={st.perNotchBox}>
+            <Text style={st.perNotchTitle}>Doser adjustment for each notch finer</Text>
+            <Text style={st.perNotchHelp}>Seconds to add to the doser time per notch finer (taken off when going coarser). Example: 0.2 means 1 notch finer → doser +0.2 s. Tap the number to type, or use − / +.</Text>
+            <View style={st.perNotch}>
+              <Stepper label="SECONDS PER NOTCH" unit={rawRule ? 'your setting' : ds.perNotch ? `blank = ${fmt(ds.perNotch, 2)} s learned` : 'not set yet · learning'}
+                value={rawRule || ''} onChange={v => onChangeRules({ ...(grinder.rules || {}), doserNotch: v })} step={0.1} decimals={1} />
+            </View>
+            {rawRule ? <Text style={st.perNotchHelp}>Clear the box to go back to the learned value.</Text> : null}
           </View>
         ) : null}
       </View>
@@ -96,7 +101,10 @@ const st = StyleSheet.create({
   doseTile: { backgroundColor: C.accentSoft, borderRadius: R.md, borderWidth: 1, borderColor: '#1D3B7A', padding: S.lg, alignItems: 'center', gap: 4 },
   doseBig: { color: C.white, fontSize: 48, fontWeight: '800' },
   unit: { color: C.muted, fontSize: 18, fontWeight: '600' },
-  perNotch: { alignSelf: 'stretch', flexDirection: 'row', marginTop: S.sm },
+  perNotchBox: { alignSelf: 'stretch', marginTop: S.sm, gap: 4, borderTopWidth: 1, borderTopColor: '#1D3B7A', paddingTop: S.md },
+  perNotchTitle: { color: C.ink, fontSize: 14, fontWeight: '700' },
+  perNotchHelp: { color: C.muted, fontSize: 12 },
+  perNotch: { alignSelf: 'stretch', flexDirection: 'row', marginTop: 4 },
   tiles: { flexDirection: 'row', gap: S.md },
   tile: { flex: 1, backgroundColor: C.surface2, borderRadius: R.md, padding: S.md, gap: 2, alignItems: 'center' },
   tileLabel: { color: C.muted, fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
