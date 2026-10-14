@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, TextInput, Pressable, StyleSheet } from 'react-native';
 import { C, S, R } from '../theme';
 import { Card, Label, Segmented, Note, Button } from '../components/ui';
@@ -46,6 +46,12 @@ export default function ShotLoop({ grinder, coffee, run, runShots, coffeeShots, 
   const [refine, setRefine] = useState(false);
   useEffect(() => { setF(fresh()); setErr(''); setRefine(false); }, [runShots.length, run.id]);
   const set = k => v => setF(p => ({ ...p, [k]: v }));
+  const timeRef = useRef(null);
+  // − / + on extraction time: starts from the middle of the target band when empty
+  const bumpTime = d => setF(p => {
+    const n = num(p.time);
+    return { ...p, time: String(Math.max(0, +((n === null ? mid : n) + d).toFixed(1))) };
+  });
 
   const doseOff = num(f.dose) !== null && Math.abs(num(f.dose) - run.dose) > run.tol + 1e-9;
 
@@ -152,14 +158,21 @@ export default function ShotLoop({ grinder, coffee, run, runShots, coffeeShots, 
             </View>
           ) : null}
 
-          <View style={st.timeBox}>
-            <Text style={st.tileLabel}>EXTRACTION TIME</Text>
-            <View style={st.inline}>
-              <TextInput value={f.time} onChangeText={set('time')} keyboardType="decimal-pad" placeholder={`${fmt(run.tLo, 0)}–${fmt(run.tHi, 0)}`}
-                placeholderTextColor={C.faint} style={st.timeInput} />
-              <Text style={st.unit}>s</Text>
+          <Pressable style={st.timeBox} onPress={() => timeRef.current && timeRef.current.focus()} accessibilityLabel="Extraction time in seconds">
+            <Text style={st.tileLabel}>EXTRACTION TIME (SECONDS)</Text>
+            <View style={st.timeRow}>
+              <Pressable onPress={() => bumpTime(-0.5)} style={st.timeBtn} hitSlop={6} accessibilityLabel="Half a second less">
+                <Text style={st.timeBtnText}>−</Text>
+              </Pressable>
+              <TextInput ref={timeRef} value={f.time} onChangeText={set('time')} keyboardType="decimal-pad" inputMode="decimal"
+                placeholder={`${fmt(run.tLo, 0)}–${fmt(run.tHi, 0)}`} placeholderTextColor={C.faint} style={st.timeInput}
+                returnKeyType="done" selectTextOnFocus />
+              <Pressable onPress={() => bumpTime(0.5)} style={st.timeBtn} hitSlop={6} accessibilityLabel="Half a second more">
+                <Text style={st.timeBtnText}>+</Text>
+              </Pressable>
             </View>
-          </View>
+            <Text style={st.tileSub}>Tap the number to type it, or use − / +</Text>
+          </Pressable>
           <View style={{ gap: 6 }}>
             <Label>How did it taste? (optional)</Label>
             <View style={st.tastes}>
@@ -222,7 +235,11 @@ const st = StyleSheet.create({
   bigInput: { color: C.white, fontSize: 38, fontWeight: '800', minWidth: 90, textAlign: 'center', paddingVertical: 2 },
   inline: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
   timeBox: { backgroundColor: C.accentSoft, borderRadius: R.md, borderWidth: 1, borderColor: '#1D3B7A', padding: S.lg, alignItems: 'center' },
-  timeInput: { color: C.white, fontSize: 56, fontWeight: '800', minWidth: 120, textAlign: 'center', paddingVertical: 2 },
+  timeRow: { flexDirection: 'row', alignItems: 'center', gap: S.sm, marginVertical: 4 },
+  timeInput: { color: C.white, fontSize: 48, fontWeight: '800', width: 170, height: 72, textAlign: 'center', padding: 0,
+    backgroundColor: C.surface, borderRadius: R.md, borderWidth: 1, borderColor: '#1D3B7A' },
+  timeBtn: { width: 48, height: 48, borderRadius: 12, borderWidth: 1, borderColor: C.line, backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center' },
+  timeBtnText: { color: C.ink, fontSize: 26, fontWeight: '600', marginTop: -2 },
   unit: { color: C.muted, fontSize: 18, fontWeight: '600' },
   tastes: { flexDirection: 'row', gap: S.sm },
   taste: { flex: 1, borderWidth: 1, borderColor: C.line, borderRadius: R.md, paddingVertical: 14, alignItems: 'center', backgroundColor: C.surface2 },

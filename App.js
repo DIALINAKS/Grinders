@@ -153,7 +153,8 @@ export default function App() {
 
   return (
     <Shell>
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={st_.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={st_.scroll} keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets>
         <View style={st_.header}>
           <Image source={require('./assets/logo.png')} style={st_.logo} />
           <View style={{ flex: 1 }}>
@@ -223,7 +224,7 @@ function Shell({ children }) {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }}>
       <StatusBar barStyle="light-content" backgroundColor={C.bg} />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'android' ? 'height' : undefined}>
         {children}
       </KeyboardAvoidingView>
     </SafeAreaView>
