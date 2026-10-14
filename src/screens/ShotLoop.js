@@ -9,6 +9,7 @@ import { recommend, rulesFor, dialMarks, checkDialEntry, fmt, num, doserFor } fr
 const LOADS = [{ value: 0, label: 'Quiet' }, { value: 1, label: 'Steady' }, { value: 2, label: 'Busy' }];
 const TASTES = [{ value: 'sour', label: 'Sour' }, { value: 'balanced', label: 'Balanced' }, { value: 'bitter', label: 'Bitter' }];
 const str = v => (v == null || v === '' ? '' : String(v));
+const diffText = d => { const r = Math.round(d * 10) / 10; return r > 0 ? `+${r.toFixed(1)}` : r.toFixed(1); };
 
 /**
  * One calibration run, shot by shot (used by both modes):
@@ -36,7 +37,7 @@ export default function ShotLoop({ grinder, coffee, run, runShots, coffeeShots, 
     return {
       setting: recOk ? r.dial.entry : last ? str(last.setting) : str(first ? first.setting : grinder.lastSetting),
       doserTime: recOk && r.dose.seconds != null ? r.dose.seconds.toFixed(1) : last ? str(last.doserTime) : str(first ? first.doserTime : ''),
-      dose: str(run.dose), dropOk: true, ground: '', topped: true, yieldOut: str(run.yield), time: '', taste: '',
+      dose: str(run.dose), dropOk: true, ground: '', diffDraft: null, topped: true, yieldOut: str(run.yield), time: '', taste: '',
       roomTemp: str(last ? last.roomTemp : first ? first.roomTemp : ''), humidity: str(last ? last.humidity : first ? first.humidity : ''),
       workload: last ? (last.workload ?? 1) : first && first.workload != null ? first.workload : 1,
     };
@@ -149,12 +150,15 @@ export default function ShotLoop({ grinder, coffee, run, runShots, coffeeShots, 
           <View style={{ gap: 6 }}>
             <Label>Did the grinder drop {fmt(run.dose)} g?</Label>
             <Segmented options={[{ value: true, label: `Yes, ${fmt(run.dose)} g` }, { value: false, label: 'No' }]} value={f.dropOk}
-              onChange={v => setF(p => ({ ...p, dropOk: v, ground: v ? '' : (p.ground || str(run.dose)) }))} />
+              onChange={v => setF(p => ({ ...p, dropOk: v, diffDraft: null, ground: v ? '' : (p.ground || str(run.dose)) }))} />
           </View>
           {!f.dropOk ? (
             <View style={st.dropBox}>
               <View style={st.steppers}>
-                <Stepper label="GRINDER DROPPED" unit="g · weigh before any top-up" value={f.ground} onChange={set('ground')} step={0.1} />
+                <Stepper label="GRINDER DROPPED" unit="g · weigh before any top-up" value={f.ground} onChange={v => setF(p => ({ ...p, ground: v, diffDraft: null }))} step={0.1} />
+                <Stepper label="OVER (+) / UNDER (−)" unit={groundG === null ? `g vs ${fmt(run.dose)} g` : groundG > run.dose ? `g over ${fmt(run.dose)} g` : groundG < run.dose ? `g under ${fmt(run.dose)} g` : `g · spot on`}
+                  value={f.diffDraft != null ? (/^\d/.test(f.diffDraft) && num(f.diffDraft) > 0 ? '+' + f.diffDraft : f.diffDraft) : groundG === null ? '' : diffText(groundG - run.dose)}
+                  onChange={v => { const d = num(v); setF(p => ({ ...p, diffDraft: v, ground: d === null ? p.ground : String(+(run.dose + d).toFixed(1)) })); }} step={0.1} />
               </View>
               <View style={{ gap: 6 }}>
                 <Label>Did you top up or take out to {fmt(run.dose)} g?</Label>
