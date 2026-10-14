@@ -101,6 +101,20 @@ export const HALF_LIFE = 30;  // days: a shot this old counts half
 // evidence needed before a room-condition term is called "measured"
 export const EVIDENCE = { roomTemp: { n: 8, range: 3 }, humidity: { n: 8, range: 15 } };
 
+/**
+ * What the grinder actually dropped for a shot. Differs from s.dose (what went in the basket)
+ * when the barista topped up or took coffee out. The doser's grind rate must use this.
+ */
+export const dropped = s => (ok(num(s.ground)) ? num(s.ground) : num(s.dose));
+
+/** Doser time that gives the target dose, from one weighed drop: target ÷ (dropped ÷ doser time). */
+export function doserFor(target, droppedG, doserTime) {
+  const t = num(target), g = num(droppedG), d = num(doserTime);
+  if (!ok(t) || !ok(g) || !ok(d) || g <= 0 || d <= 0) return null;
+  const rate = g / d;
+  return { rate, seconds: Math.round((t / rate) * 10) / 10 };
+}
+
 export function solve(A, b) {
   const n = b.length, M = A.map((r, i) => [...r, b[i]]);
   for (let c = 0; c < n; c++) {
@@ -222,7 +236,7 @@ function fitOnce(L0, bench, pool, gauge) {
   const my = avg(L.map(s => s.time)), sst = L.reduce((t, s) => t + (s.time - my) ** 2, 0);
   const sigma = n > 2 ? Math.sqrt(ssr / (n - 2)) : null;
   // grind rate (g/s) against setting, for doser time
-  const R = L.filter(s => ok(s.dose) && ok(s.doserTime) && s.doserTime > 0).map(s => ({ x: s.setting, y: s.dose / s.doserTime }));
+  const R = L.filter(s => ok(dropped(s)) && ok(s.doserTime) && s.doserTime > 0).map(s => ({ x: s.setting, y: dropped(s) / s.doserTime }));
   let rate = null;
   if (R.length) {
     const xs = R.map(r => r.x), rs = R.map(r => r.y);
@@ -363,7 +377,7 @@ export function recommend({ shots, grinderShots, rules, gauge = true, now, ancho
   const finerStep = b1 > 0 ? 1 : -1;
   const doserPerNotch = (m.rate && ok(dose)) ? dose / m.rate(s0 + finerStep) - dose / m.rate(s0) : null;
   const Pd = [...P, ...(calRow ? [calRow] : [])];
-  const lastR = Pd.filter(s => ok(s.dose) && ok(s.doserTime) && s.doserTime > 0).slice(-1)[0];
+  const lastR = Pd.filter(s => ok(dropped(s)) && ok(s.doserTime) && s.doserTime > 0).slice(-1)[0];
   const kRule = num(rules.doserNotch);
   let kDoser = null, kSrc = '';
   if (ok(kRule) && kRule > 0) { kDoser = kRule; kSrc = 'your rule'; }
@@ -372,7 +386,7 @@ export function recommend({ shots, grinderShots, rules, gauge = true, now, ancho
   if (lastR && ok(dose)) {
     const loadNotch = (parts.find(p => p.k === 'workload') || {}).notch || 0;
     finerGap = ((s0 - lastR.setting) - loadNotch) * finerStep;
-    const baseT = lastR.doserTime * dose / lastR.dose;
+    const baseT = lastR.doserTime * dose / dropped(lastR);
     doser = Math.round((baseT + (kDoser || 0) * finerGap) * 10) / 10;
     doserUnknown = Math.abs(finerGap) >= 0.5 / QM && kDoser === null;
   }
@@ -401,7 +415,7 @@ export function recommend({ shots, grinderShots, rules, gauge = true, now, ancho
     slopeSource: m.slopeSource, env: m.env,
     finerIsHigher: b1 > 0,
     direction: b1 < 0 ? 'Lower numbers run slower on this grinder.' : 'Higher numbers run slower on this grinder.',
-    dose: { seconds: doser, preset, lastSeconds: lastR ? lastR.doserTime : null, lastGrams: lastR ? lastR.dose : null,
+    dose: { seconds: doser, target: dose, preset, lastSeconds: lastR ? lastR.doserTime : null, lastGrams: lastR ? dropped(lastR) : null,
             change: lastR && doser !== null ? Math.round((doser - lastR.doserTime) * 10) / 10 : null, perNotch: kDoser, perNotchSource: kSrc, unknownPerNotch: doserUnknown, gapNotches: finerGap },
     secondsPerNotch: Math.abs(b1), secondsPerMark: Math.abs(b1) / M, secondsPerQuarter: Math.abs(b1) / M / QTR,
     shotsUsed: m.n, fitPercent: m.r2 !== null && m.n > 2 ? Math.round(Math.max(0, m.r2) * 100) : null,

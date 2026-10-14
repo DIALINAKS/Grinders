@@ -1,6 +1,6 @@
 // Run with: npm test   (node tests/engine.test.mjs)
 // Checks the Dial In calibration engine (v2).
-import { recommend, rulesFor, fromDial, fmtDial, checkDialEntry, reconcileGrinders, usageText, insights } from '../src/engine/index.js';
+import { doserFor, recommend, rulesFor, fromDial, fmtDial, checkDialEntry, reconcileGrinders, usageText, insights } from '../src/engine/index.js';
 import assert from 'node:assert/strict';
 
 const mazzer = rulesFor({ model: 'Mazzer' });          // 10 marks, finer = lower number, benchmarks 10 s/number, 1 number per 4 °C
@@ -114,6 +114,15 @@ t('doser time holds the target dose (18 g)', () => {
   const shots = [{ setting: 6.5, dose: 18.4, doserTime: 6.0, yield: 36, time: 30, ts: day(0) }];
   const r = recommend({ shots, rules: mazzer, now: now0, anchor: { kind: 'shot', setting: 6.5, time: 30 } });
   assert.equal(r.dose.seconds, 5.9);           // 18 ÷ (18.4 ÷ 6.0)
+});
+
+t('grinder dropped short and barista topped up: doser rate uses what the grinder dropped', () => {
+  // E6 doser 7.0 s dropped 16.8 g, topped up to 18.0 g in the basket
+  assert.deepEqual(doserFor(18, 16.8, 7.0).seconds, 7.5);
+  const shots = [{ setting: 6.5, dose: 18, ground: 16.8, doserTime: 7.0, yield: 36, time: 30, ts: day(0) }];
+  const r = recommend({ shots, rules: mazzer, now: now0, anchor: { kind: 'shot', setting: 6.5, time: 30 } });
+  assert.equal(r.dose.seconds, 7.5);
+  assert.equal(r.dose.lastGrams, 16.8);
 });
 
 t('insights separate temperature and humidity', () => {

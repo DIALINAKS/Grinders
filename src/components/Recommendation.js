@@ -29,7 +29,9 @@ export default function Recommendation({ r, M, grinder, onChangeRules, compact }
   let doseWhy;
   if (ds.seconds == null) doseWhy = 'Enter a doser time with your shot to get this.';
   else if (ds.unknownPerNotch) doseWhy = `Kept at ${fmt(ds.seconds)} s for now. A finer grind comes out slower, so the doser usually needs a little longer. Dial In learns how much from your weighed doses, or you can set it in the box just below.`;
-  else if (Math.abs(ds.gapNotches || 0) < 1e-6) doseWhy = `Keeps ${fmt(ds.lastGrams)} g → your target dose.`;
+  else if (Math.abs(ds.gapNotches || 0) < 1e-6) doseWhy = ds.lastGrams != null && ds.target != null && Math.abs(ds.lastGrams - ds.target) > 0.05
+    ? `Last drop was ${fmt(ds.lastGrams)} g on ${fmt(ds.lastSeconds)} s. This time drops ${fmt(ds.target)} g.`
+    : `Drops your ${fmt(ds.target)} g dose.`;
   else if (!ds.change) doseWhy = `Grind move too small to change the dose time (${fmt(ds.perNotch, 2)} s per notch, ${ds.perNotchSource}).`;
   else doseWhy = `${ds.change > 0 ? '+' : ''}${fmt(ds.change)} s for the grind move (${fmt(ds.perNotch, 2)} s per notch, ${ds.perNotchSource}).`;
 

@@ -4,7 +4,7 @@ import { C, S, R } from '../theme';
 import { Card, Label, Segmented, Note, Button } from '../components/ui';
 import { ShotsChart, Stepper, Pill } from '../components/visuals';
 import Recommendation from '../components/Recommendation';
-import { recommend, rulesFor, dialMarks, checkDialEntry, fmt, num } from '../engine';
+import { recommend, rulesFor, dialMarks, checkDialEntry, fmt, num, doserFor } from '../engine';
 
 const LOADS = [{ value: 0, label: 'Quiet' }, { value: 1, label: 'Steady' }, { value: 2, label: 'Busy' }];
 const TASTES = [{ value: 'sour', label: 'Sour' }, { value: 'balanced', label: 'Balanced' }, { value: 'bitter', label: 'Bitter' }];
@@ -36,7 +36,7 @@ export default function ShotLoop({ grinder, coffee, run, runShots, coffeeShots, 
     return {
       setting: recOk ? r.dial.entry : last ? str(last.setting) : str(first ? first.setting : grinder.lastSetting),
       doserTime: recOk && r.dose.seconds != null ? r.dose.seconds.toFixed(1) : last ? str(last.doserTime) : str(first ? first.doserTime : ''),
-      dose: str(run.dose), yieldOut: str(run.yield), time: '', taste: '',
+      dose: str(run.dose), dropOk: true, ground: '', topped: true, yieldOut: str(run.yield), time: '', taste: '',
       roomTemp: str(last ? last.roomTemp : first ? first.roomTemp : ''), humidity: str(last ? last.humidity : first ? first.humidity : ''),
       workload: last ? (last.workload ?? 1) : first && first.workload != null ? first.workload : 1,
     };
@@ -53,13 +53,17 @@ export default function ShotLoop({ grinder, coffee, run, runShots, coffeeShots, 
     return { ...p, time: String(Math.max(0, +((n === null ? mid : n) + d).toFixed(1))) };
   });
 
-  const doseOff = num(f.dose) !== null && Math.abs(num(f.dose) - run.dose) > run.tol + 1e-9;
+  // what the grinder dropped vs what went in the basket
+  const groundG = f.dropOk ? run.dose : num(f.ground);
+  const basketG = f.dropOk || f.topped ? run.dose : groundG;
+  const doseOff = basketG !== null && Math.abs(basketG - run.dose) > run.tol + 1e-9;
+  const fixDoser = !f.dropOk ? doserFor(run.dose, groundG, num(f.doserTime)) : null;
 
   const record = () => {
     const s = num(f.setting);
     if (s === null) return setErr('Enter what the grinder reads.');
     const de = checkDialEntry(s, M); if (de) return setErr(de);
-    if (num(f.dose) === null) return setErr('Enter the dose you weighed.');
+    if (!f.dropOk && groundG === null) return setErr(`Enter what the grinder dropped before any top-up.`);
     if (num(f.time) === null) return setErr('Enter the extraction time.');
     setErr('');
     // remember what the app predicted, so its accuracy can be checked later
@@ -67,7 +71,7 @@ export default function ShotLoop({ grinder, coffee, run, runShots, coffeeShots, 
     if (r && r.status === 'ready' && !inBand && Math.abs(num(r.dial.entry) - s) < 1e-6) { recSetting = num(r.dial.entry); predTime = Math.round(r.predictedTime * 10) / 10; }
     else if (!last && first && first.predTime != null && Math.abs(num(first.setting) - s) < 1e-6) { recSetting = num(first.setting); predTime = first.predTime; }
     onRecord({
-      setting: s, doserTime: num(f.doserTime), dose: num(f.dose), yield: num(f.yieldOut) ?? run.yield, time: num(f.time),
+      setting: s, doserTime: num(f.doserTime), dose: basketG, ground: groundG, toppedUp: !f.dropOk && f.topped, yield: num(f.yieldOut) ?? run.yield, time: num(f.time),
       roomTemp: gauge ? num(f.roomTemp) : null, humidity: gauge ? num(f.humidity) : null,
       workload: rules.burr === 'fan' ? Number(f.workload) : null, taste: f.taste,
       target: mid, targetLo: run.tLo, targetHi: run.tHi, recSetting, predTime, doseOff,
@@ -94,7 +98,10 @@ export default function ShotLoop({ grinder, coffee, run, runShots, coffeeShots, 
           </View>
           <Text style={st.small}>Dial {last.setting} · {fmt(last.dose)} g → {fmt(last.yield)} g{last.doserTime != null ? ` · doser ${fmt(last.doserTime)} s` : ''}</Text>
           {last.predTime != null ? <Text style={st.small}>Predicted {fmt(last.predTime)} s · actual {fmt(last.time)} s ({last.time - last.predTime >= 0 ? '+' : '−'}{fmt(Math.abs(last.time - last.predTime))} s)</Text> : null}
-          {last.doseOff ? <Note tone="warn">That dose was {fmt(last.dose)} g, outside {fmt(run.dose)} ± {fmt(run.tol)} g. Correct the doser so the next shot is on {fmt(run.dose)} g, or the time change can't be put down to the grind.</Note> : null}
+          {last.ground != null && Math.abs(last.ground - run.dose) > 1e-6 ? (
+            <Note>Grinder dropped {fmt(last.ground)} g on {fmt(last.doserTime)} s{last.toppedUp ? `, topped up to ${fmt(run.dose)} g in the basket` : ''}. The doser time below is worked out to drop {fmt(run.dose)} g next time.</Note>
+          ) : null}
+          {last.doseOff ? <Note tone="warn">The basket had {fmt(last.dose)} g, outside {fmt(run.dose)} ± {fmt(run.tol)} g, so part of the time change comes from the dose, not the grind.</Note> : null}
 
           {inBand && !refine ? (
             <View style={{ gap: S.md }}>
@@ -139,11 +146,35 @@ export default function ShotLoop({ grinder, coffee, run, runShots, coffeeShots, 
             </View>
           </View>
 
+          <View style={{ gap: 6 }}>
+            <Label>Did the grinder drop {fmt(run.dose)} g?</Label>
+            <Segmented options={[{ value: true, label: `Yes, ${fmt(run.dose)} g` }, { value: false, label: 'No' }]} value={f.dropOk}
+              onChange={v => setF(p => ({ ...p, dropOk: v, ground: v ? '' : (p.ground || str(run.dose)) }))} />
+          </View>
+          {!f.dropOk ? (
+            <View style={st.dropBox}>
+              <View style={st.steppers}>
+                <Stepper label="GRINDER DROPPED" unit="g · weigh before any top-up" value={f.ground} onChange={set('ground')} step={0.1} />
+              </View>
+              <View style={{ gap: 6 }}>
+                <Label>Did you top up or take out to {fmt(run.dose)} g?</Label>
+                <Segmented options={[{ value: true, label: `Yes, basket ${fmt(run.dose)} g` }, { value: false, label: 'No, used as dropped' }]} value={f.topped} onChange={set('topped')} />
+              </View>
+              {fixDoser ? (
+                <View style={st.fixBox}>
+                  <Text style={st.tileLabel}>SET THE DOSER TO</Text>
+                  <Text style={st.fixBig}>{fmt(fixDoser.seconds)} s</Text>
+                  <Text style={st.tileSub}>{fmt(groundG)} g in {fmt(num(f.doserTime))} s = {fmt(fixDoser.rate, 2)} g per second · {fixDoser.seconds - num(f.doserTime) >= 0 ? '+' : '−'}{fmt(Math.abs(fixDoser.seconds - num(f.doserTime)))} s to drop {fmt(run.dose)} g</Text>
+                </View>
+              ) : (
+                <Text style={st.small}>Enter the doser time above and the app works out the new setting.</Text>
+              )}
+              {doseOff ? <Text style={[st.small, { color: C.warn }]}>The basket is outside {fmt(run.dose)} ± {fmt(run.tol)} g, so this shot's time won't be a clean grind reading. Topping up to {fmt(run.dose)} g keeps it clean.</Text> : null}
+            </View>
+          ) : null}
           <View style={st.steppers}>
-            <Stepper label="DOSE WEIGHED" unit={doseOff ? `outside ${fmt(run.dose)} ± ${fmt(run.tol)} g` : 'g'} value={f.dose} onChange={set('dose')} step={0.1} />
             <Stepper label="YIELD IN CUP" unit="g" value={f.yieldOut} onChange={set('yieldOut')} step={0.1} />
           </View>
-          {doseOff ? <Text style={[st.small, { color: C.warn }]}>Dose is outside your tolerance. Keep it at {fmt(run.dose)} g so only the grind changes.</Text> : null}
 
           {gauge ? (
             <View style={st.steppers}>
@@ -242,6 +273,9 @@ const st = StyleSheet.create({
   timeBtnText: { color: C.ink, fontSize: 26, fontWeight: '600', marginTop: -2 },
   unit: { color: C.muted, fontSize: 18, fontWeight: '600' },
   tastes: { flexDirection: 'row', gap: S.sm },
+  dropBox: { gap: S.md, borderWidth: 1, borderColor: C.line, borderRadius: R.md, padding: S.md, backgroundColor: C.surface2 },
+  fixBox: { backgroundColor: C.accentSoft, borderRadius: R.md, borderWidth: 1, borderColor: '#1D3B7A', padding: S.md, alignItems: 'center', gap: 2 },
+  fixBig: { color: C.white, fontSize: 36, fontWeight: '800' },
   taste: { flex: 1, borderWidth: 1, borderColor: C.line, borderRadius: R.md, paddingVertical: 14, alignItems: 'center', backgroundColor: C.surface2 },
   tasteText: { color: C.ink, fontWeight: '700', fontSize: 15 },
   tileLabel: { color: C.muted, fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },

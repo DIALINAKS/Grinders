@@ -31,6 +31,7 @@ export default function History({ shots, epochStart, onDelete, readOnly }) {
             Dial <Text style={st.b}>{s.setting}</Text> · {fmt(s.time)} s · {fmt(s.dose)} g → {fmt(s.yield)} g
             {s.dose ? ` (1:${fmt(s.yield / s.dose)})` : ''}
           </Text>
+          {s.ground != null && Math.abs(s.ground - s.dose) > 1e-6 ? <Text style={st.sub}>Grinder dropped {fmt(s.ground)} g{s.toppedUp ? `, topped up to ${fmt(s.dose)} g` : ''}</Text> : null}
           {s.predTime != null ? <Text style={st.sub}>Predicted {fmt(s.predTime)} s · off by {fmt(Math.abs(s.time - s.predTime))} s</Text> : null}
           <Text style={st.sub}>
             Doser {s.doserTime != null ? fmt(s.doserTime) + ' s' : '–'} · Room {s.roomTemp != null ? fmt(s.roomTemp) + ' °C' : '–'} · {s.humidity != null ? fmt(s.humidity, 0) + '%' : '–'} RH{s.workload != null ? ' · ' + LOADS[s.workload] : ''}
