@@ -36,10 +36,12 @@ This is the React Native / Expo version of Dial In. It runs on iPhone and Androi
    npx expo install --fix
    npx expo start
    ```
-   `expo install --fix` lines the package versions up with the current Expo release.
+   The app targets **Expo SDK 57** (React Native 0.86), which is what the current Expo Go needs. `expo install --fix` lines the other packages (react-native-svg, async-storage) up with SDK 57.
 4. Scan the QR code with the iPhone camera. The app opens in Expo Go.
 
 ### Option B: in the browser with Expo Snack (no install)
+
+Note: Snack currently only offers up to SDK 55, so its QR code won't open in an Expo Go that has updated to SDK 57. Use Option A for Expo Go.
 
 1. Go to **snack.expo.dev** and sign in.
 2. Drag the project files into Snack, keeping the folder structure: `App.js`, `src/…`, `assets/…`.
