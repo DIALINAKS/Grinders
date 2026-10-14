@@ -8,7 +8,7 @@ import { fmt } from '../engine';
 const when = ts => new Date(ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 
 /** Dashboard: the two operating modes, plus this grinder's saved calibrations. */
-export default function Home({ grinder, items, run, runCoffee, runCount, onNew, onAdjust, onContinue, onGauge, onArchiveCoffee }) {
+export default function Home({ grinder, items, run, runCoffee, runCount, onNew, onAdjust, onMaintain, onContinue, onGauge, onArchiveCoffee }) {
   return (
     <View style={{ gap: S.lg }}>
       {grinder.gauge == null ? (
@@ -28,16 +28,16 @@ export default function Home({ grinder, items, run, runCoffee, runCount, onNew, 
         </Card>
       ) : null}
 
-      <Pressable onPress={onNew} style={({ pressed }) => [st.mode, pressed && { opacity: 0.85 }]} accessibilityRole="button">
-        <Text style={st.modeTitle}>DIAL IN A NEW COFFEE</Text>
-        <Text style={st.modeSub}>Find your ideal grinder setting.</Text>
-        <Text style={st.modeBody}>Setting up a new coffee? We'll guide you through finding the correct grind setting, one extraction at a time.</Text>
+      <Pressable onPress={() => (items.length ? onAdjust(null) : onNew())} style={({ pressed }) => [st.mode, pressed && { opacity: 0.85 }]} accessibilityRole="button">
+        <Text style={st.modeTitle}>DIAL IN A COFFEE</Text>
+        <Text style={st.modeSub}>Opening up, or changing coffee.</Text>
+        <Text style={st.modeBody}>Pick the coffee and enter the room. Dial In predicts the grind and doser time from your saved calibration, then you check the dose and the extraction. New coffees are guided step by step.</Text>
       </Pressable>
 
-      <Pressable onPress={() => onAdjust(null)} style={({ pressed }) => [st.mode, st.mode2, pressed && { opacity: 0.85 }]} accessibilityRole="button">
-        <Text style={st.modeTitle}>ADJUST EXISTING COFFEE</Text>
-        <Text style={st.modeSub}>Predict your next adjustment.</Text>
-        <Text style={st.modeBody}>Already dialled in? Use your previous calibration and current conditions to predict your next grinder adjustment.</Text>
+      <Pressable onPress={() => onMaintain(null)} disabled={!items.length} style={({ pressed }) => [st.mode, st.mode2, !items.length && { opacity: 0.5 }, pressed && { opacity: 0.85 }]} accessibilityRole="button">
+        <Text style={st.modeTitle}>MAINTAIN CALIBRATION</Text>
+        <Text style={st.modeSub}>During service.</Text>
+        <Text style={st.modeBody}>{items.length ? 'Room warmed up or getting busy? Dial In checks whether the grinder needs a change, and tells you when it doesn\'t.' : 'Available once a coffee has a saved calibration on this grinder.'}</Text>
       </Pressable>
 
       <Card>

@@ -85,6 +85,11 @@ export default function App() {
       grinders: s.grinders.map(g => (g.id === grinder.id ? { ...g, lastSetting: fields.setting } : g)),
     }));
   };
+  const recordDoseCheck = fields => {
+    const c = coffeeById(st, run.coffeeId);
+    update(s => ({ ...s, shots: [...s.shots, { ...fields, kind: 'dose', role: 'test', id: newId('d'), grinderId: grinder.id, grinder: grinder.name, coffeeId: run.coffeeId, bean: c ? c.name : '', runId: run.id, mode: run.mode, ts: new Date().toISOString(), sample: !!grinder.sample }] }));
+  };
+  const toggleExclude = id => update(s => ({ ...s, shots: s.shots.map(x => (x.id === id ? { ...x, excluded: !x.excluded, excludedWhy: x.excluded ? null : (x.excludedWhy || 'Set aside by barista') } : x)) }));
   const saveCal = confidence => { const cid = run.coffeeId; update(s => saveCalibration(s, run, confidence)); setFlow({ kind: 'saved', coffeeId: cid }); };
   const restartRun = () => { const cid = run.coffeeId; update(s => ({ ...s, run: null })); setFlow({ kind: 'new', preset: { coffeeId: cid } }); };
   const deleteShot = id => update(s => ({ ...s, shots: s.shots.filter(x => x.id !== id) }));
@@ -115,14 +120,14 @@ export default function App() {
     if (flow && flow.kind === 'loop' && run) {
       body = <ShotLoop grinder={grinder} coffee={coffeeById(st, run.coffeeId) || { name: 'Coffee' }} run={run} runShots={runShots}
         coffeeShots={coffeeShots(run.coffeeId)} grinderShots={epoch} first={run.first} blocked={blocked}
-        onRecord={recordShot} onSave={saveCal} onRestart={restartRun} onStop={() => setFlow(null)}
+        onRecord={recordShot} onDoseCheck={recordDoseCheck} onToggleExclude={toggleExclude} onSave={saveCal} onRestart={restartRun} onStop={() => setFlow(null)}
         onChangeRules={changeRules} onSeePlans={() => go('account')} />;
     } else if (flow && flow.kind === 'new') {
       body = <NewCoffee grinder={grinder} coffees={st.coffees} preset={flow.preset} onCreateCoffee={createCoffee}
         onStart={r => startRun(r, null)} onCancel={() => setFlow(null)} />;
     } else if (flow && flow.kind === 'adjust') {
       body = <Adjust grinder={grinder} items={items} startCoffeeId={flow.coffeeId} coffeeShots={coffeeShots} grinderShots={epoch}
-        onStart={startRun} onCancel={() => setFlow(null)} onNewCoffee={() => setFlow({ kind: 'new' })} />;
+        maintain={!!flow.maintain} onStart={startRun} onCancel={() => setFlow(null)} onNewCoffee={() => setFlow({ kind: 'new' })} />;
     } else if (flow && flow.kind === 'saved') {
       const c = coffeeById(st, flow.coffeeId), k = activeCal(st, grinder, flow.coffeeId);
       body = (
@@ -134,14 +139,15 @@ export default function App() {
         </Card>
       );
     } else {
-      body = <Home grinder={grinder} items={items} run={run} runCoffee={run ? coffeeById(st, run.coffeeId) : null} runCount={runShots.length}
+      body = <Home grinder={grinder} items={items} run={run} runCoffee={run ? coffeeById(st, run.coffeeId) : null} runCount={runShots.filter(x => x.time != null).length}
         onNew={() => setFlow({ kind: 'new' })} onAdjust={cid => setFlow({ kind: 'adjust', coffeeId: cid })} onContinue={() => setFlow({ kind: 'loop' })}
+        onMaintain={cid => setFlow({ kind: 'adjust', coffeeId: cid, maintain: true })}
         onGauge={v => setGrinder(grinder.id, { gauge: v })}
         onArchiveCoffee={id => update(s => ({ ...s, coffees: s.coffees.map(c => (c.id === id ? { ...c, archived: true } : c)) }))} />;
     }
   } else if (tab === 'history') {
     body = <History shots={viewCoffee ? st.shots.filter(s => s.grinderId === grinder.id && s.coffeeId === viewCoffee.id).sort((a, b) => (a.ts < b.ts ? -1 : 1)) : []}
-      epochStart={grinder.epochStart} onDelete={deleteShot} readOnly={grinder.archived} />;
+      epochStart={grinder.epochStart} onDelete={deleteShot} onToggleExclude={toggleExclude} readOnly={grinder.archived} />;
   } else {
     body = <Insights grinder={grinder} shots={viewCoffee ? coffeeShots(viewCoffee.id) : []} grinderShots={epoch} />;
   }

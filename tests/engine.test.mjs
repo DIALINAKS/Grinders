@@ -1,6 +1,6 @@
 // Run with: npm test   (node tests/engine.test.mjs)
 // Checks the Dial In calibration engine (v2).
-import { doserFor, recommend, rulesFor, fromDial, fmtDial, checkDialEntry, reconcileGrinders, usageText, insights } from '../src/engine/index.js';
+import { checkShot, stepResponse, doserFor, recommend, rulesFor, fromDial, fmtDial, checkDialEntry, reconcileGrinders, usageText, insights } from '../src/engine/index.js';
 import assert from 'node:assert/strict';
 
 const mazzer = rulesFor({ model: 'Mazzer' });          // 10 subdivisions, finer = lower number, no house rules
@@ -154,6 +154,35 @@ t('doser adjustment per notch is learned from weighed drops at two settings', ()
   assert.ok(r.dose.perNotch > 0);           // finer needs more doser time
   assert.ok(!r.dose.unknownPerNotch);
   assert.ok(r.dose.seconds < 7.5);          // going coarser from 6.3: shorter than the 7.5 s that 16.8 g implies at 6.3
+});
+
+t('brief §3 example recorded as a step: 25 s → 29 s, 2 subdivisions finer = 2 s per subdivision', () => {
+  const st = stepResponse({ setting: 6.3, time: 29 }, { setting: 6.5, time: 25 }, mazzer);
+  assert.equal(st.stepsFiner, 2);
+  assert.equal(st.secPerSubdivision, 2);
+});
+
+t('invalid shots are set aside with a reason, and ignored by the engine', () => {
+  const run = { dose: 18, tol: 0.3, yield: 36 };
+  assert.ok(/outside 18.0 ± 0.3 g/.test(checkShot({ dose: 17.2, yield: 36, setting: 6.5 }, null, run)));
+  assert.ok(/more than 1 g/.test(checkShot({ dose: 18, yield: 38.5, setting: 6.5 }, null, run)));
+  assert.ok(/jumped/.test(checkShot({ dose: 18, yield: 36, setting: 9.5 }, { setting: 6.5 }, run)));
+  assert.equal(checkShot({ dose: 18, yield: 36, setting: 6.7 }, { setting: 6.5 }, run), null);
+  // a typo shot (65 instead of 6.5) excluded: the engine still sees a single valid shot → guided step
+  const shots = [{ setting: 6.5, time: 38, dose: 18, yield: 36, ts: day(0) }, { setting: 65, time: 20, dose: 18, yield: 36, ts: day(0), excluded: true }];
+  const r = recommend({ shots, rules: mazzer, now: now0 });
+  assert.equal(r.label, 'Insufficient data');
+});
+
+t('dose checks without an extraction still teach the grind rate', () => {
+  const shots = [
+    { setting: 6.5, ground: 18.0, doserTime: 7.0, ts: day(0) },                       // dose check only
+    { setting: 6.3, ground: 17.0, doserTime: 7.0, ts: day(0) },                       // dose check only
+    { setting: 6.5, time: 30, dose: 18, ground: 18.0, doserTime: 7.0, yield: 36, ts: day(0) },
+    { setting: 6.3, time: 34, dose: 18, ground: 17.0, doserTime: 7.0, yield: 36, ts: day(0) },
+  ];
+  const r = recommend({ shots, rules: mazzer, now: now0, anchor: { kind: 'shot', setting: 6.3, time: 34 } });
+  assert.equal(r.dose.drops.n, 4);
 });
 
 t('insights separate temperature and humidity', () => {

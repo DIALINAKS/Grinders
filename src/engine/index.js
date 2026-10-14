@@ -81,7 +81,7 @@ export function toDial(x, M) {
 export const fmtDial = (x, M) => { if (!ok(x)) return '–'; const t = toDial(x, M); return `${t.w}.${t.mk}${FR[t.q]}`; };
 export const fracText = q => { const whole = Math.floor(q + 1e-9), f = Math.round((q - whole) * QTR); return (whole ? String(whole) : '') + FR[f] || '0'; };
 export const marksText = q => `${fracText(q)} subdivision${q > 1 ? 's' : ''}`;
-export const dialWords = (x, M) => { const t = toDial(x, M), d = t.mk + t.q / QTR; return d ? `${t.w} and ${marksText(d)}` : `on the ${t.w}`; };
+export const dialWords = (x, M) => { const t = toDial(x, M), d = t.mk + t.q / QTR; return d ? `${t.w}, mark ${fracText(d)}` : `on the ${t.w}`; };
 /** A dial value (notches) as what the barista types: 4 + 3/6 → "4.3". */
 export const toEntry = (x, M) => { const w = Math.floor(x + 1e-9), d = Math.round((x - w) * M * 4) / 4; return String(+(w + d / 10).toFixed(3)); };
 
@@ -112,6 +112,32 @@ export const EVIDENCE = { roomTemp: { n: 8, range: 3 }, humidity: { n: 8, range:
  * when the barista topped up or took coffee out. The doser's grind rate must use this.
  */
 export const dropped = s => (ok(num(s.ground)) ? num(s.ground) : num(s.dose));
+
+/**
+ * Why a shot should be set aside, or null if it is valid. The barista can include it again.
+ * prev = the previous shot of the run (same grinder + coffee), run = { dose, tol, yield }.
+ */
+export function checkShot(shot, prev, run) {
+  if (ok(num(shot.dose)) && Math.abs(num(shot.dose) - run.dose) > run.tol + 1e-9) return `Basket dose ${fmt(num(shot.dose))} g, outside ${fmt(run.dose)} ± ${fmt(run.tol)} g`;
+  if (ok(num(shot.yield)) && ok(num(run.yield)) && Math.abs(num(shot.yield) - run.yield) > 1 + 1e-9) return `Yield ${fmt(num(shot.yield))} g, more than 1 g from ${fmt(run.yield)} g`;
+  if (prev && ok(num(prev.setting)) && ok(num(shot.setting)) && Math.abs(num(shot.setting) - num(prev.setting)) > 2 + 1e-9) return `Setting jumped from ${prev.setting} to ${shot.setting}: check it was typed correctly`;
+  return null;
+}
+
+/**
+ * The measured step between two shots: subdivisions moved finer (+) or coarser (−), and
+ * seconds of extraction per subdivision finer. Null when the step can't be measured.
+ */
+export function stepResponse(shot, prev, rules) {
+  const M = dialMarks(rules);
+  if (!prev || !ok(num(prev.time)) || !ok(num(shot.time))) return null;
+  const a = fromDial(num(prev.setting), M), b = fromDial(num(shot.setting), M);
+  if (!ok(a) || !ok(b)) return null;
+  const finer = Math.round((rules.dir === 'higher' ? b - a : a - b) * M * 4) / 4; // subdivisions, + = finer
+  const out = { prevSetting: prev.setting, stepsFiner: finer };
+  if (Math.abs(finer) >= 0.25) out.secPerSubdivision = Math.round(((num(shot.time) - num(prev.time)) / finer) * 100) / 100;
+  return out;
+}
 
 /** Doser time that gives the target dose, from one weighed drop: target ÷ (dropped ÷ doser time). */
 export function doserFor(target, droppedG, doserTime) {
@@ -156,7 +182,8 @@ export function ageWeight(ts, now = Date.now()) {
 
 /** Prepare logged shots for the model: notches, absolute humidity, weights. Never invents readings. */
 export function prepare(shots, M, gauge, now) {
-  return shots.map(s => ({
+  // shots set aside as invalid (typo, wrong dose, wrong yield) are never learned from
+  return shots.filter(s => !s.excluded).map(s => ({
     ...s,
     dial: s.setting,
     setting: fromDial(num(s.setting), M),
@@ -249,7 +276,8 @@ function fitOnce(L0, bench, pool, gauge) {
   const my = avg(L.map(s => s.time)), sst = L.reduce((t, s) => t + (s.time - my) ** 2, 0);
   const sigma = n > 2 ? Math.sqrt(ssr / (n - 2)) : null;
   // grind rate (g/s) against setting, for doser time
-  const R = L.filter(s => ok(dropped(s)) && ok(s.doserTime) && s.doserTime > 0).map(s => ({ x: s.setting, y: dropped(s) / s.doserTime }));
+  // grind rate learns from every weighed drop, including dose checks with no extraction
+  const R = L0.filter(s => ok(s.setting) && ok(dropped(s)) && ok(s.doserTime) && s.doserTime > 0).map(s => ({ x: s.setting, y: dropped(s) / s.doserTime }));
   let rate = null, rateTrend = null, drops = { n: R.length, settings: 0 };
   if (R.length) {
     const xs = R.map(r => r.x), rs = R.map(r => r.y);
@@ -265,7 +293,7 @@ function fitOnce(L0, bench, pool, gauge) {
     rateTrend = settingsTried >= 2 ? (x => { const xc = Math.min(xmax + 1, Math.max(xmin - 1, x)); return Math.max(rmin * 0.5, myr + slope * (xc - mx)); }) : null;
     drops = { n: R.length, settings: settingsTried };
   }
-  return { ok: true, n, distinct, beta, mean, cov, sigma, r2: sst > 0 ? 1 - ssr / sst : null, L, rate, rateTrend, drops, slopeSource, env: envEvidence(L) };
+  return { ok: true, n, distinct, beta, mean, cov, sigma, r2: sst > 0 ? 1 - ssr / sst : null, L, rate, rateTrend, drops, slopeSource, env: envEvidence(L.filter(s => s.role !== 'test')) }; // room/workload evidence: verified shots only
 }
 
 /* ---------------- recommendation ---------------- */
@@ -288,8 +316,7 @@ function guided({ P, calRow, anchor, M, rules, step, lo, hi, target, dose }) {
   const QM = M * QTR;
   let s0, t;
   if (anchor && anchor.kind === 'shot' && ok(num(anchor.time)) && ok(fromDial(num(anchor.setting), M))) { s0 = fromDial(num(anchor.setting), M); t = num(anchor.time); }
-  else if (P.length && ok(P[P.length - 1].setting) && ok(P[P.length - 1].time)) { s0 = P[P.length - 1].setting; t = P[P.length - 1].time; }
-  else return null;
+  else { const lt = [...P].reverse().find(r => ok(r.setting) && ok(r.time)); if (!lt) return null; s0 = lt.setting; t = lt.time; }
   const coarser = rules.dir === 'higher' ? -1 : 1; // sign of a coarser move in dial numbers
   const subdiv = Math.max(GUIDE_STEPS, num(rules.minStep) || 1);
   const delta = t > hi ? coarser * subdiv / M : t < lo ? -coarser * subdiv / M : 0;
@@ -564,7 +591,7 @@ export const activeGrinders = grinders => grinders.filter(g => !g.archived);
 export const canRegisterGrinder = (tierId, grinders) => activeGrinders(grinders.filter(g => !g.sample)).length < tierOf(tierId).grinders;
 // sample grinders and sample shots never count towards a plan's limits
 export const realGrinders = grinders => grinders.filter(g => !g.sample);
-export const realShots = shots => shots.filter(s => !s.sample);
+export const realShots = shots => shots.filter(s => !s.sample && s.kind !== 'dose'); // dose checks don't count towards the Free limit
 export const shotLimitReached = (tierId, shots) => realShots(shots).length >= tierOf(tierId).shots;
 export function usageText(tierId, grinders, shots) {
   const t = tierOf(tierId), act = activeGrinders(realGrinders(grinders)).length, n = realShots(shots).length;

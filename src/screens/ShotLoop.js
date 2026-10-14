@@ -4,7 +4,7 @@ import { C, S, R } from '../theme';
 import { Card, Label, Segmented, Note, Button } from '../components/ui';
 import { ShotsChart, Stepper, Pill } from '../components/visuals';
 import Recommendation from '../components/Recommendation';
-import { recommend, rulesFor, dialMarks, checkDialEntry, fmt, num, doserFor } from '../engine';
+import { recommend, rulesFor, dialMarks, checkDialEntry, fmt, num, doserFor, checkShot, stepResponse } from '../engine';
 
 const LOADS = [{ value: 0, label: 'Quiet' }, { value: 1, label: 'Steady' }, { value: 2, label: 'Busy' }];
 const TASTES = [{ value: 'sour', label: 'Sour' }, { value: 'balanced', label: 'Balanced' }, { value: 'bitter', label: 'Bitter' }];
@@ -17,11 +17,13 @@ const diffText = d => { const r = Math.round(d * 10) / 10; return r > 0 ? `+${r.
  *   doser time → repeat until the shot lands in the target band → Save calibration.
  * The dose stays fixed for the whole run. Changing it starts a new run.
  */
-export default function ShotLoop({ grinder, coffee, run, runShots, coffeeShots, grinderShots, first, blocked,
-  onRecord, onSave, onRestart, onStop, onChangeRules, onSeePlans }) {
+export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, coffeeShots, grinderShots, first, blocked,
+  onRecord, onDoseCheck, onToggleExclude, onSave, onRestart, onStop, onChangeRules, onSeePlans }) {
   const rules = rulesFor(grinder);
   const M = dialMarks(rules);
   const gauge = grinder.gauge === true;
+  const runShots = allRunRows.filter(x => num(x.time) !== null);   // extractions only (dose checks have no time)
+  const doseChecks = allRunRows.length - runShots.length;
   const last = runShots[runShots.length - 1];
   const mid = (run.tLo + run.tHi) / 2;
   const inBand = !!last && last.time >= run.tLo && last.time <= run.tHi;
@@ -30,10 +32,10 @@ export default function ShotLoop({ grinder, coffee, run, runShots, coffeeShots, 
     shots: coffeeShots, grinderShots, rules, gauge,
     now: { target: mid, targetLo: run.tLo, targetHi: run.tHi, dose: run.dose, yield: run.yield, roomTemp: last.roomTemp, humidity: last.humidity, groupTemp: last.groupTemp, workload: last.workload },
     anchor: { kind: 'shot', setting: last.setting, time: last.time },
-  }) : null), [coffeeShots.length, grinderShots.length, grinder, run.id]);
+  }) : null), [coffeeShots.length, grinderShots.length, grinder, run.id, last && last.excluded]);
 
   const fresh = () => {
-    const recOk = r && r.status === 'ready';
+    const recOk = r && r.status === 'ready' && !(last && last.excluded);
     return {
       setting: recOk ? r.dial.entry : last ? str(last.setting) : str(first ? first.setting : grinder.lastSetting),
       doserTime: recOk && r.dose.seconds != null ? r.dose.seconds.toFixed(1) : last ? str(last.doserTime) : str(first ? first.doserTime : ''),
@@ -45,7 +47,8 @@ export default function ShotLoop({ grinder, coffee, run, runShots, coffeeShots, 
   const [f, setF] = useState(fresh);
   const [err, setErr] = useState('');
   const [refine, setRefine] = useState(false);
-  useEffect(() => { setF(fresh()); setErr(''); setRefine(false); }, [runShots.length, run.id]);
+  const [phase, setPhase] = useState('dose'); // 'dose' → 'extract'
+  useEffect(() => { setF(fresh()); setErr(''); setRefine(false); setPhase('dose'); }, [runShots.length, run.id]);
   const set = k => v => setF(p => ({ ...p, [k]: v }));
   const timeRef = useRef(null);
   // − / + on extraction time: starts from the middle of the target band when empty
@@ -60,23 +63,44 @@ export default function ShotLoop({ grinder, coffee, run, runShots, coffeeShots, 
   const doseOff = basketG !== null && Math.abs(basketG - run.dose) > run.tol + 1e-9;
   const fixDoser = !f.dropOk ? doserFor(run.dose, groundG, num(f.doserTime)) : null;
 
+  const checkDose = () => {
+    const s = num(f.setting);
+    if (s === null) return 'Enter what the grinder reads.';
+    const de = checkDialEntry(s, M); if (de) return de;
+    if (!f.dropOk && groundG === null) return 'Enter what the grinder dropped before any top-up.';
+    return null;
+  };
+  const toExtraction = () => { const e = checkDose(); if (e) return setErr(e); setErr(''); setPhase('extract'); };
+  // weigh again: log this drop as a dose check, set the corrected doser time, ask for the next drop
+  const reweigh = () => {
+    const e = checkDose(); if (e) return setErr(e);
+    if (!fixDoser) return setErr('Enter the doser time to work out the correction.');
+    setErr('');
+    onDoseCheck({ setting: num(f.setting), doserTime: num(f.doserTime), ground: groundG, roomTemp: gauge ? num(f.roomTemp) : null, humidity: gauge ? num(f.humidity) : null, workload: rules.burr === 'fan' ? Number(f.workload) : null });
+    setF(p => ({ ...p, doserTime: fixDoser.seconds.toFixed(1), dropOk: true, ground: '', diffDraft: null, topped: true }));
+  };
+
   const record = () => {
     const s = num(f.setting);
-    if (s === null) return setErr('Enter what the grinder reads.');
-    const de = checkDialEntry(s, M); if (de) return setErr(de);
-    if (!f.dropOk && groundG === null) return setErr(`Enter what the grinder dropped before any top-up.`);
+    const e = checkDose(); if (e) { setPhase('dose'); return setErr(e); }
     if (num(f.time) === null) return setErr('Enter the extraction time.');
     setErr('');
     // remember what the app predicted, so its accuracy can be checked later
     let recSetting = null, predTime = null;
-    if (r && r.status === 'ready' && !inBand && Math.abs(num(r.dial.entry) - s) < 1e-6) { recSetting = num(r.dial.entry); predTime = Math.round(r.predictedTime * 10) / 10; }
+    if (r && r.status === 'ready' && !inBand && r.predictedTime != null && !(last && last.excluded) && Math.abs(num(r.dial.entry) - s) < 1e-6) { recSetting = num(r.dial.entry); predTime = Math.round(r.predictedTime * 10) / 10; }
     else if (!last && first && first.predTime != null && Math.abs(num(first.setting) - s) < 1e-6) { recSetting = num(first.setting); predTime = first.predTime; }
-    onRecord({
+    const shot = {
       setting: s, doserTime: num(f.doserTime), dose: basketG, ground: groundG, toppedUp: !f.dropOk && f.topped, yield: num(f.yieldOut) ?? run.yield, time: num(f.time),
       roomTemp: gauge ? num(f.roomTemp) : null, humidity: gauge ? num(f.humidity) : null,
       workload: rules.burr === 'fan' ? Number(f.workload) : null, taste: f.taste,
-      target: mid, targetLo: run.tLo, targetHi: run.tHi, recSetting, predTime, doseOff,
-    });
+      target: mid, targetLo: run.tLo, targetHi: run.tHi, recSetting, predTime, doseOff, role: 'test',
+    };
+    // the brief's step record: previous setting, subdivisions moved, measured seconds per subdivision
+    const prevValid = [...runShots].reverse().find(x => !x.excluded);
+    Object.assign(shot, stepResponse(shot, prevValid, rules) || {});
+    const why = checkShot(shot, last, run);
+    if (why) { shot.excluded = true; shot.excludedWhy = why; }
+    onRecord(shot);
   };
 
   return (
@@ -104,7 +128,13 @@ export default function ShotLoop({ grinder, coffee, run, runShots, coffeeShots, 
           ) : null}
           {last.doseOff ? <Note tone="warn">The basket had {fmt(last.dose)} g, outside {fmt(run.dose)} ± {fmt(run.tol)} g, so part of the time change comes from the dose, not the grind.</Note> : null}
 
-          {inBand && !refine ? (
+          {last.secPerSubdivision != null && !last.excluded ? <Text style={st.small}>Step from {last.prevSetting}: {Math.abs(last.stepsFiner)} subdivision{Math.abs(last.stepsFiner) === 1 ? '' : 's'} {last.stepsFiner > 0 ? 'finer' : 'coarser'} · {fmt(Math.abs(last.secPerSubdivision), 2)} s per subdivision measured</Text> : null}
+          {last.excluded ? (
+            <View style={{ gap: S.sm }}>
+              <Note tone="warn">{`Set aside, not learned from: ${last.excludedWhy}. Pull it again at the same setting with the correct dose and yield.`}</Note>
+              <Button title="Include it anyway" kind="secondary" onPress={() => onToggleExclude(last.id)} />
+            </View>
+          ) : inBand && !refine ? (
             <View style={{ gap: S.md }}>
               <Note>In your target band. Taste it: extraction time is the calibration guide, taste decides the recipe.{last.taste === 'sour' ? ' It tasted sour, so you might aim a little longer.' : last.taste === 'bitter' ? ' It tasted bitter, so you might aim a little shorter.' : ''}</Note>
               <Button title="Save calibration" onPress={() => onSave(r && r.status === 'ready' ? r.confidence : 'Low')} />
@@ -118,11 +148,15 @@ export default function ShotLoop({ grinder, coffee, run, runShots, coffeeShots, 
 
       {!(inBand && !refine) ? (
         <Card>
-          <Text style={st.h}>{last ? `PULL SHOT ${runShots.length + 1}` : 'FIRST SHOT'}</Text>
+          <View style={st.steps}>
+            <Text style={[st.stepTag, phase === 'dose' && st.stepOn]}>1 · DOSE</Text>
+            <Text style={[st.stepTag, phase === 'extract' && st.stepOn]}>2 · EXTRACTION</Text>
+          </View>
+          <Text style={st.h}>{last ? `SHOT ${runShots.length + 1}` : 'FIRST SHOT'}: {phase === 'dose' ? 'GET THE DOSE RIGHT' : 'PULL AND TIME IT'}</Text>
           {!last ? (
             <View style={{ gap: 4 }}>
-              {['Check the grinder\'s current setting.', `Grind and weigh ${fmt(run.dose)} g.`, 'Prepare the espresso the same way each time.',
-                'Start the timer when the pump starts.', `Stop at ${fmt(run.yield)} g in the cup.`, 'Record the time below.'].map((t, i) => (
+              {['Check the grinder\'s current setting.', `Grind and weigh the drop (target ${fmt(run.dose)} g).`, 'Prepare the espresso the same way each time.',
+                'Start the timer when the pump starts.', `Stop at ${fmt(run.yield)} g in the cup.`, 'Enter the dose below first, then the time on step 2.'].map((t, i) => (
                 <Text key={i} style={st.small}>{i + 1}. {t}</Text>
               ))}
             </View>
@@ -134,6 +168,8 @@ export default function ShotLoop({ grinder, coffee, run, runShots, coffeeShots, 
             </View>
           ) : null}
 
+          {phase === 'dose' ? (
+            <>
           <View style={st.hero2}>
             <View style={st.bigField}>
               <Text style={st.tileLabel}>GRINDER READS</Text>
@@ -146,6 +182,19 @@ export default function ShotLoop({ grinder, coffee, run, runShots, coffeeShots, 
               <Text style={st.tileSub}>seconds · optional</Text>
             </View>
           </View>
+
+          {gauge ? (
+            <View style={st.steppers}>
+              <Stepper label="ROOM" unit="°C" value={f.roomTemp} onChange={set('roomTemp')} step={0.5} />
+              <Stepper label="HUMIDITY" unit="% RH" value={f.humidity} onChange={set('humidity')} step={1} decimals={0} />
+            </View>
+          ) : null}
+          {rules.burr === 'fan' ? (
+            <View style={{ gap: 6 }}>
+              <Label>Workload now</Label>
+              <Segmented options={LOADS} value={Number(f.workload)} onChange={set('workload')} />
+            </View>
+          ) : null}
 
           <View style={{ gap: 6 }}>
             <Label>Did the grinder drop {fmt(run.dose)} g?</Label>
@@ -176,22 +225,16 @@ export default function ShotLoop({ grinder, coffee, run, runShots, coffeeShots, 
               {doseOff ? <Text style={[st.small, { color: C.warn }]}>The basket is outside {fmt(run.dose)} ± {fmt(run.tol)} g, so this shot's time won't be a clean grind reading. Topping up to {fmt(run.dose)} g keeps it clean.</Text> : null}
             </View>
           ) : null}
+              {!f.dropOk && fixDoser && !f.topped ? <Button title={`Re-weigh with the doser on ${fmt(fixDoser.seconds)} s`} kind="secondary" onPress={reweigh} /> : null}
+              {!f.dropOk && fixDoser && f.topped ? <Button title={`Set ${fmt(fixDoser.seconds)} s and weigh again`} kind="secondary" onPress={reweigh} /> : null}
+              <Button title="Dose is right: next, the extraction" onPress={toExtraction} disabled={!!blocked} />
+            </>
+          ) : (
+            <>
+              <Text style={st.small}>Dial {f.setting} · doser {f.doserTime || '–'} s · basket {fmt(basketG)} g{doseChecks ? ` · ${doseChecks} dose check${doseChecks === 1 ? '' : 's'} logged` : ''}</Text>
           <View style={st.steppers}>
             <Stepper label="YIELD IN CUP" unit="g" value={f.yieldOut} onChange={set('yieldOut')} step={0.1} />
           </View>
-
-          {gauge ? (
-            <View style={st.steppers}>
-              <Stepper label="ROOM" unit="°C" value={f.roomTemp} onChange={set('roomTemp')} step={0.5} />
-              <Stepper label="HUMIDITY" unit="% RH" value={f.humidity} onChange={set('humidity')} step={1} decimals={0} />
-            </View>
-          ) : null}
-          {rules.burr === 'fan' ? (
-            <View style={{ gap: 6 }}>
-              <Label>Workload now</Label>
-              <Segmented options={LOADS} value={Number(f.workload)} onChange={set('workload')} />
-            </View>
-          ) : null}
 
           <Pressable style={st.timeBox} onPress={() => timeRef.current && timeRef.current.focus()} accessibilityLabel="Extraction time in seconds">
             <Text style={st.tileLabel}>EXTRACTION TIME (SECONDS)</Text>
@@ -222,7 +265,10 @@ export default function ShotLoop({ grinder, coffee, run, runShots, coffeeShots, 
               })}
             </View>
           </View>
-          <Button title="Record shot" onPress={record} disabled={!!blocked} />
+              <Button title="Record shot" onPress={record} disabled={!!blocked} />
+              <Button title="‹ Back to the dose" kind="link" onPress={() => setPhase('dose')} />
+            </>
+          )}
           {err ? <Text style={st.err}>{err}</Text> : null}
         </Card>
       ) : null}
@@ -285,4 +331,7 @@ const st = StyleSheet.create({
   tileLabel: { color: C.muted, fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
   tileSub: { color: C.muted, fontSize: 12, textAlign: 'center' },
   steppers: { flexDirection: 'row', flexWrap: 'wrap', gap: S.sm },
+  steps: { flexDirection: 'row', gap: S.sm },
+  stepTag: { flex: 1, textAlign: 'center', paddingVertical: 6, borderRadius: R.pill, borderWidth: 1, borderColor: C.line, color: C.muted, fontSize: 12, fontWeight: '800', overflow: 'hidden' },
+  stepOn: { backgroundColor: C.accent, borderColor: C.accent, color: C.white },
 });

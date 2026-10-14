@@ -7,7 +7,7 @@ import { fmt } from '../engine';
 const LOADS = ['Quiet', 'Steady', 'Busy'];
 const TASTE_COLOR = { sour: C.warn, balanced: C.good, bitter: C.bad };
 
-export default function History({ shots, epochStart, onDelete, readOnly }) {
+export default function History({ shots, epochStart, onDelete, onToggleExclude, readOnly }) {
   const list = [...shots].reverse();
   const [armed, setArmed] = useState(null); // web: tap twice to delete (browser dialogs may be blocked)
   const confirmDelete = s => {
@@ -25,12 +25,28 @@ export default function History({ shots, epochStart, onDelete, readOnly }) {
         <View key={s.id} style={[st.row, epochStart && s.ts < epochStart && { opacity: 0.55 }]}>
           <View style={st.top}>
             <Text style={st.date}>{new Date(s.ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} · {new Date(s.ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}{s.mode === 'adjust' ? ' · adjust' : s.mode === 'new' ? ' · dial-in' : ''}</Text>
-            {s.taste ? <Text style={[st.pill, { color: TASTE_COLOR[s.taste], borderColor: TASTE_COLOR[s.taste] }]}>{s.taste}</Text> : null}
+            <View style={{ flexDirection: 'row', gap: 6 }}>
+              {s.kind === 'dose' ? <Text style={[st.pill, { color: C.muted, borderColor: C.line }]}>dose check</Text>
+                : s.role === 'verified' ? <Text style={[st.pill, { color: C.good, borderColor: C.good }]}>verified</Text>
+                : s.role === 'test' ? <Text style={[st.pill, { color: C.muted, borderColor: C.line }]}>test</Text> : null}
+              {s.taste ? <Text style={[st.pill, { color: TASTE_COLOR[s.taste], borderColor: TASTE_COLOR[s.taste] }]}>{s.taste}</Text> : null}
+            </View>
           </View>
-          <Text style={st.main}>
-            Dial <Text style={st.b}>{s.setting}</Text> · {fmt(s.time)} s · {fmt(s.dose)} g → {fmt(s.yield)} g
-            {s.dose ? ` (1:${fmt(s.yield / s.dose)})` : ''}
-          </Text>
+          {s.kind === 'dose' ? (
+            <Text style={st.main}>Dial <Text style={st.b}>{s.setting}</Text> · grinder dropped {fmt(s.ground)} g in {fmt(s.doserTime)} s</Text>
+          ) : (
+            <Text style={st.main}>
+              Dial <Text style={st.b}>{s.setting}</Text> · {fmt(s.time)} s · {fmt(s.dose)} g → {fmt(s.yield)} g
+              {s.dose ? ` (1:${fmt(s.yield / s.dose)})` : ''}
+            </Text>
+          )}
+          {s.secPerSubdivision != null ? <Text style={st.sub}>From {s.prevSetting}: {Math.abs(s.stepsFiner)} subdivision{Math.abs(s.stepsFiner) === 1 ? '' : 's'} {s.stepsFiner > 0 ? 'finer' : 'coarser'} · {fmt(Math.abs(s.secPerSubdivision), 2)} s per subdivision</Text> : null}
+          {s.excluded ? (
+            <View style={{ flexDirection: 'row', gap: S.md, alignItems: 'center', flexWrap: 'wrap' }}>
+              <Text style={[st.sub, { color: C.warn, flexShrink: 1 }]}>Set aside: {s.excludedWhy || 'invalid'}</Text>
+              {!readOnly && onToggleExclude ? <Pressable onPress={() => onToggleExclude(s.id)} hitSlop={8}><Text style={st.link}>Include again</Text></Pressable> : null}
+            </View>
+          ) : null}
           {s.ground != null && Math.abs(s.ground - s.dose) > 1e-6 ? <Text style={st.sub}>Grinder dropped {fmt(s.ground)} g{s.toppedUp ? `, topped up to ${fmt(s.dose)} g` : ''}</Text> : null}
           {s.predTime != null ? <Text style={st.sub}>Predicted {fmt(s.predTime)} s · off by {fmt(Math.abs(s.time - s.predTime))} s</Text> : null}
           <Text style={st.sub}>
@@ -54,4 +70,5 @@ const st = StyleSheet.create({
   b: { fontWeight: '800', color: C.accentBright },
   sub: { color: C.muted, fontSize: 12 },
   del: { color: C.bad, fontSize: 12, marginTop: 2 },
+  link: { color: C.accentBright, fontSize: 12, fontWeight: '700' },
 });

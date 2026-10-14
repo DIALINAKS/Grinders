@@ -15,21 +15,23 @@ const when = ts => new Date(ts).toLocaleDateString(undefined, { day: 'numeric', 
  * Mode 2 · Adjust an existing coffee. Uses the coffee's saved calibration on THIS grinder,
  * the grinder's confirmed position and today's room to predict the setting before the first shot.
  */
-export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, grinderShots, onStart, onCancel, onNewCoffee }) {
+export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, grinderShots, maintain, onStart, onCancel, onNewCoffee }) {
   const rules = rulesFor(grinder);
   const M = dialMarks(rules);
   const gauge = grinder.gauge === true;
   const [cid, setCid] = useState(startCoffeeId && items.some(i => i.coffee.id === startCoffeeId) ? startCoffeeId : null);
-  const [step, setStep] = useState(cid ? 'position' : 'coffee');
+  // Maintain (during service): the grinder is where the last shot left it, so skip the position question
+  const afterCoffee = maintain ? (gauge ? 'room' : 'predict') : 'position';
+  const [step, setStep] = useState(cid ? afterCoffee : 'coffee');
   const [still, setStill] = useState(null);
   const [pos, setPos] = useState('');
   const [room, setRoom] = useState({ roomTemp: '', humidity: '', workload: 1 });
   const [err, setErr] = useState('');
   const item = items.find(i => i.coffee.id === cid);
   const cal = item && item.cal;
-  const current = still === false ? num(pos) : cal ? num(cal.setting) : null;
+  const current = maintain ? (num(grinder.lastSetting) ?? (cal ? num(cal.setting) : null)) : still === false ? num(pos) : cal ? num(cal.setting) : null;
 
-  const pick = id => { setCid(id); setStill(null); setPos(''); setErr(''); setStep('position'); };
+  const pick = id => { setCid(id); setStill(null); setPos(''); setErr(''); setStep(afterCoffee); };
   const confirmPos = () => {
     if (still === null) return setErr('Tell us where the grinder is now.');
     if (still === false) {
@@ -61,8 +63,8 @@ export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, gri
     <View style={{ gap: S.lg }}>
       {step === 'coffee' ? (
         <Card>
-          <Text style={st.h}>WHICH COFFEE?</Text>
-          <Body muted>Coffees with a saved calibration on {grinder.name}.</Body>
+          <Text style={st.h}>{maintain ? 'WHICH COFFEE IS IN THE HOPPER?' : 'WHICH COFFEE?'}</Text>
+          <Body muted>{maintain ? `Checks whether the room or how busy ${grinder.name} is calls for a change, without pulling a shot first.` : `Coffees with a saved calibration on ${grinder.name}.`}</Body>
           {items.length ? items.map(({ coffee, cal: k }) => (
             <Pressable key={coffee.id} onPress={() => pick(coffee.id)} style={st.row}>
               <View style={st.rowTop}><Text style={st.rowTitle}>{coffee.name}</Text><Text style={st.rowSet}>{k.setting}</Text></View>
@@ -70,7 +72,7 @@ export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, gri
               {coffeeLine(coffee) ? <Text style={st.small}>{coffeeLine(coffee)}</Text> : null}
             </Pressable>
           )) : <Note>No saved calibrations on this grinder yet. Dial in a coffee first; once it's saved, it appears here.</Note>}
-          {!items.length ? <Button title="Dial in a new coffee" onPress={onNewCoffee} /> : null}
+          {!maintain ? <Button title={items.length ? '＋ New coffee, or one not dialled in on this grinder yet' : 'Dial in a new coffee'} kind={items.length ? 'secondary' : 'primary'} onPress={onNewCoffee} /> : null}
           <Button title="Cancel" kind="link" onPress={onCancel} />
         </Card>
       ) : null}
@@ -115,16 +117,16 @@ export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, gri
               <Segmented options={LOADS} value={Number(room.workload)} onChange={v => setRoom(p => ({ ...p, workload: v }))} />
             </View>
           ) : null}
-          <Button title="Predict my setting" onPress={() => setStep('predict')} />
-          <Button title="‹ Back" kind="link" onPress={() => setStep('position')} />
+          <Button title={maintain ? 'Check' : 'Predict my setting'} onPress={() => setStep('predict')} />
+          <Button title="‹ Back" kind="link" onPress={() => setStep(maintain ? 'coffee' : 'position')} />
         </Card>
       ) : null}
 
       {step === 'predict' && r ? (
         <Card>
-          <Text style={st.h}>PREDICTED SETTING</Text>
+          <Text style={st.h}>{maintain ? (r.status === 'ready' && r.dial.moveShort === 'hold' ? 'NO CHANGE NEEDED' : 'ADJUSTMENT') : 'PREDICTED SETTING'}</Text>
           <View style={st.facts}>
-            <Fact label="SAVED" value={String(cal.setting)} />
+            <Fact label="VERIFIED" value={String(cal.setting)} />
             <Fact label="GRINDER NOW" value={str(current)} />
             <Fact label="PREDICTED" value={r.status === 'ready' ? r.dial.text : '–'} strong />
           </View>
@@ -133,13 +135,26 @@ export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, gri
             <Note tone="warn">{`Not enough calibration history to predict a reliable adjustment for: ${r.notApplied.join('; ')}. Dial In hasn't measured that effect on this grinder yet, so it isn't applied. Start from your verified setting and check the first extraction. Every verified calibration teaches it.`}</Note>
           ) : null}
           <Recommendation r={r} M={M} grinder={grinder} compact />
-          {r.status === 'ready' ? (
+          {maintain ? (
+            r.status === 'ready' && r.dial.moveShort === 'hold' ? (
+              <>
+                <Note>{`Expected to stay inside ${fmt(cal.targetLo, 0)}–${fmt(cal.targetHi, 0)} s. Leave the grinder on ${str(current)}.`}</Note>
+                <Button title="Done" onPress={onCancel} />
+                <Button title="Pull a check shot anyway" kind="secondary" onPress={() => start('current')} />
+              </>
+            ) : r.status === 'ready' ? (
+              <>
+                <Button title={`Set ${r.dial.text} and pull a check shot`} onPress={() => start('predicted')} />
+                <Button title="Done (I've made the change)" kind="secondary" onPress={onCancel} />
+              </>
+            ) : <Button title={`Pull a check shot on ${str(current)}`} onPress={() => start('current')} />
+          ) : r.status === 'ready' ? (
             <>
-              <Button title={r.dial.moveShort === 'hold' ? `Pull the first shot on ${r.dial.text}` : `Pull the first shot on ${r.dial.text}`} onPress={() => start('predicted')} />
+              <Button title={`Pull the first shot on ${r.dial.text}`} onPress={() => start('predicted')} />
               {r.dial.moveShort !== 'hold' ? <Button title={`Start from ${str(current)} instead`} kind="secondary" onPress={() => start('current')} /> : null}
             </>
           ) : <Button title={`Start from ${str(current)}`} onPress={() => start('current')} />}
-          <Button title="‹ Back" kind="link" onPress={() => setStep(gauge ? 'room' : 'position')} />
+          <Button title="‹ Back" kind="link" onPress={() => setStep(gauge ? 'room' : maintain ? 'coffee' : 'position')} />
         </Card>
       ) : null}
     </View>

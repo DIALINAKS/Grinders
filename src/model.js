@@ -84,12 +84,14 @@ export function grinderCoffees(st, grinder) {
 
 /** Save the latest shot of a run as the coffee's calibration on that grinder. */
 export function saveCalibration(st, run, confidence) {
-  const runShots = st.shots.filter(s => s.runId === run.id).sort(byTs);
+  const runShots = st.shots.filter(s => s.runId === run.id && s.time != null && !s.excluded).sort(byTs);
   const last = runShots[runShots.length - 1];
   if (!last) return st;
   const cal = calFromShot({ ...last, targetLo: run.tLo, targetHi: run.tHi }, run.grinderId, run.coffeeId, runShots, confidence, false);
   return {
     ...st,
+    // the saved shot is the verified one; the others in the run stay as test shots
+    shots: st.shots.map(s => (s.id === last.id ? { ...s, role: 'verified' } : s)),
     calibrations: [...st.calibrations.map(k => (k.grinderId === run.grinderId && k.coffeeId === run.coffeeId ? { ...k, active: false } : k)), cal],
     run: null,
     coffee: { ...st.coffee, [run.grinderId]: run.coffeeId },
