@@ -237,17 +237,22 @@ function fitOnce(L0, bench, pool, gauge) {
   const sigma = n > 2 ? Math.sqrt(ssr / (n - 2)) : null;
   // grind rate (g/s) against setting, for doser time
   const R = L.filter(s => ok(dropped(s)) && ok(s.doserTime) && s.doserTime > 0).map(s => ({ x: s.setting, y: dropped(s) / s.doserTime }));
-  let rate = null;
+  let rate = null, rateTrend = null, drops = { n: R.length, settings: 0 };
   if (R.length) {
     const xs = R.map(r => r.x), rs = R.map(r => r.y);
     const mx = avg(xs), myr = avg(rs), xmin = Math.min(...xs), xmax = Math.max(...xs);
     const rmin = Math.min(...rs), rmax = Math.max(...rs);
     const sxx = R.reduce((t, r) => t + (r.x - mx) ** 2, 0);
-    let slope = (R.length >= 3 && sxx > 1e-9) ? R.reduce((t, r) => t + (r.x - mx) * (r.y - myr), 0) / sxx : 0;
-    slope *= R.length / (R.length + 3);
+    const settingsTried = new Set(xs).size;
+    // grams per second against setting: needs weighed drops at 2+ settings; shrunk a little while data is thin
+    let slope = (settingsTried >= 2 && sxx > 1e-9) ? R.reduce((t, r) => t + (r.x - mx) * (r.y - myr), 0) / sxx : 0;
+    slope *= R.length / (R.length + 1);
     rate = x => { const xc = Math.min(xmax, Math.max(xmin, x)); return Math.min(rmax * 1.15, Math.max(rmin * 0.85, myr + slope * (xc - mx))); };
+    // the trend itself, allowed one notch past the settings tried, never below half the slowest rate seen
+    rateTrend = settingsTried >= 2 ? (x => { const xc = Math.min(xmax + 1, Math.max(xmin - 1, x)); return Math.max(rmin * 0.5, myr + slope * (xc - mx)); }) : null;
+    drops = { n: R.length, settings: settingsTried };
   }
-  return { ok: true, n, distinct, beta, mean, cov, sigma, r2: sst > 0 ? 1 - ssr / sst : null, L, rate, slopeSource, env: envEvidence(L) };
+  return { ok: true, n, distinct, beta, mean, cov, sigma, r2: sst > 0 ? 1 - ssr / sst : null, L, rate, rateTrend, drops, slopeSource, env: envEvidence(L) };
 }
 
 /* ---------------- recommendation ---------------- */
@@ -375,13 +380,13 @@ export function recommend({ shots, grinderShots, rules, gauge = true, now, ancho
 
   // ---- doser time: target dose ÷ grind rate at the new setting ----
   const finerStep = b1 > 0 ? 1 : -1;
-  const doserPerNotch = (m.rate && ok(dose)) ? dose / m.rate(s0 + finerStep) - dose / m.rate(s0) : null;
+  const doserPerNotch = (m.rateTrend && ok(dose)) ? dose / m.rateTrend(s0 + finerStep) - dose / m.rateTrend(s0) : null;
   const Pd = [...P, ...(calRow ? [calRow] : [])];
   const lastR = Pd.filter(s => ok(dropped(s)) && ok(s.doserTime) && s.doserTime > 0).slice(-1)[0];
   const kRule = num(rules.doserNotch);
   let kDoser = null, kSrc = '';
   if (ok(kRule) && kRule > 0) { kDoser = kRule; kSrc = 'your rule'; }
-  else if (doserPerNotch !== null && Math.abs(doserPerNotch) >= 0.02) { kDoser = doserPerNotch; kSrc = 'learned from your shots'; }
+  else if (doserPerNotch !== null && Math.abs(doserPerNotch) >= 0.02) { kDoser = doserPerNotch; kSrc = 'learned from your weighed drops'; }
   let doser = null, doserUnknown = false, finerGap = 0;
   if (lastR && ok(dose)) {
     const loadNotch = (parts.find(p => p.k === 'workload') || {}).notch || 0;
@@ -416,7 +421,7 @@ export function recommend({ shots, grinderShots, rules, gauge = true, now, ancho
     finerIsHigher: b1 > 0,
     direction: b1 < 0 ? 'Lower numbers run slower on this grinder.' : 'Higher numbers run slower on this grinder.',
     dose: { seconds: doser, target: dose, preset, lastSeconds: lastR ? lastR.doserTime : null, lastGrams: lastR ? dropped(lastR) : null,
-            change: lastR && doser !== null ? Math.round((doser - lastR.doserTime) * 10) / 10 : null, perNotch: kDoser, perNotchSource: kSrc, unknownPerNotch: doserUnknown, gapNotches: finerGap },
+            change: lastR && doser !== null ? Math.round((doser - lastR.doserTime) * 10) / 10 : null, perNotch: kDoser, perNotchSource: kSrc, drops: m.drops, unknownPerNotch: doserUnknown, gapNotches: finerGap },
     secondsPerNotch: Math.abs(b1), secondsPerMark: Math.abs(b1) / M, secondsPerQuarter: Math.abs(b1) / M / QTR,
     shotsUsed: m.n, fitPercent: m.r2 !== null && m.n > 2 ? Math.round(Math.max(0, m.r2) * 100) : null,
     outside: span > 0 && (s0 < sLo - span * 0.5 || s0 > sHi + span * 0.5),

@@ -56,9 +56,10 @@ export default function Rules({ grinder, onChange, readOnly, onGauge, onRecalibr
         <View style={{ gap: S.sm }}>
           <Label>Dose time</Label>
           <Grid>
-            <Field label="Doser: seconds to add per notch finer" value={r.doserNotch} onChangeText={set('doserNotch')} placeholder="Blank = learn it" editable={!readOnly} />
+            <Field label="Doser seconds per notch (optional)" value={r.doserNotch} onChangeText={set('doserNotch')} placeholder="Leave blank: learned" editable={!readOnly} />
             <Field label="Saved doser presets (s)" value={r.presets} onChangeText={set('presets')} keyboardType="default" placeholder="e.g. 5.8, 6.0, 6.2" editable={!readOnly} />
           </Grid>
+          <Body muted style={{ fontSize: 12 }}>Leave "doser seconds per notch" blank: Dial In learns it from the drops your baristas weigh. Only fill it in to override, e.g. a figure from the grinder's manufacturer.</Body>
         </View>
       </Card>
 

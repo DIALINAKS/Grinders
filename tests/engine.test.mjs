@@ -125,6 +125,19 @@ t('grinder dropped short and barista topped up: doser rate uses what the grinder
   assert.equal(r.dose.lastGrams, 16.8);
 });
 
+t('doser adjustment per notch is learned from weighed drops at two settings', () => {
+  // finer (lower number) drops slower: 6.5 → 2.6 g/s, 6.3 → 2.4 g/s
+  const shots = [
+    { setting: 6.5, dose: 18, ground: 18.2, doserTime: 7.0, yield: 36, time: 26, ts: day(0) },
+    { setting: 6.3, dose: 18, ground: 16.8, doserTime: 7.0, yield: 36, time: 31, ts: day(0) },
+  ];
+  const r = recommend({ shots, rules: mazzer, now: now0, anchor: { kind: 'shot', setting: 6.3, time: 34 } });
+  assert.equal(r.dose.perNotchSource, 'learned from your weighed drops');
+  assert.ok(r.dose.perNotch > 0);           // finer needs more doser time
+  assert.ok(!r.dose.unknownPerNotch);
+  assert.ok(r.dose.seconds < 7.5);          // going coarser from 6.3: shorter than the 7.5 s that 16.8 g implies at 6.3
+});
+
 t('insights separate temperature and humidity', () => {
   const ins = insights({ shots: prior, rules: mythos });
   assert.ok(ins.effects.some(e => e.label.startsWith('Room temperature')));

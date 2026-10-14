@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { C, S, R } from '../theme';
 import { Note } from './ui';
-import { Gauge, Pill, Stepper } from './visuals';
+import { Gauge, Pill } from './visuals';
 import { fmt } from '../engine';
 
 const CONF_TONE = { High: 'good', Moderate: 'accent', Low: 'warn' };
@@ -27,13 +27,14 @@ export default function Recommendation({ r, M, grinder, onChangeRules, compact }
   const d = r.dial, ds = r.dose;
   const rawRule = (grinder.rules || {}).doserNotch;
   let doseWhy;
-  if (ds.seconds == null) doseWhy = 'Enter a doser time with your shot to get this.';
-  else if (ds.unknownPerNotch) doseWhy = `Kept at ${fmt(ds.seconds)} s for now. A finer grind comes out slower, so the doser usually needs a little longer. Dial In learns how much from your weighed doses, or you can set it in the box just below.`;
+  const learned = ds.perNotchSource === 'learned from your weighed drops';
+  if (ds.seconds == null) doseWhy = 'Enter the doser time with your shot and Dial In works this out.';
+  else if (ds.unknownPerNotch) doseWhy = `Based on your last drop. If the next drop isn't ${fmt(ds.target)} g, choose "No" and enter what it weighed: Dial In corrects the doser and, after drops at two grind settings, adjusts it for every grind move by itself.`;
   else if (Math.abs(ds.gapNotches || 0) < 1e-6) doseWhy = ds.lastGrams != null && ds.target != null && Math.abs(ds.lastGrams - ds.target) > 0.05
     ? `Last drop was ${fmt(ds.lastGrams)} g on ${fmt(ds.lastSeconds)} s. This time drops ${fmt(ds.target)} g.`
     : `Drops your ${fmt(ds.target)} g dose.`;
-  else if (!ds.change) doseWhy = `Grind move too small to change the dose time (${fmt(ds.perNotch, 2)} s per notch, ${ds.perNotchSource}).`;
-  else doseWhy = `${ds.change > 0 ? '+' : ''}${fmt(ds.change)} s for the grind move (${fmt(ds.perNotch, 2)} s per notch, ${ds.perNotchSource}).`;
+  else if (!ds.change) doseWhy = `Grind move too small to change the doser time.`;
+  else doseWhy = `${ds.change > 0 ? '+' : '−'}${fmt(Math.abs(ds.change))} s for the grind move, so it still drops ${fmt(ds.target)} g${learned ? ` (learned from ${ds.drops ? ds.drops.n : 'your'} weighed drops)` : ' (your setting)'}.`;
 
   return (
     <View style={{ gap: S.md }}>
@@ -51,17 +52,6 @@ export default function Recommendation({ r, M, grinder, onChangeRules, compact }
         <Text style={st.doseBig}>{ds.seconds != null ? fmt(ds.seconds) : '–'}<Text style={st.unit}>{ds.seconds != null ? ' s' : ''}</Text></Text>
         {ds.preset ? <Text style={st.tileSub}>{ds.preset.text}</Text> : null}
         <Text style={st.tileSub}>{doseWhy}</Text>
-        {!compact && onChangeRules ? (
-          <View style={st.perNotchBox}>
-            <Text style={st.perNotchTitle}>Doser adjustment for each notch finer</Text>
-            <Text style={st.perNotchHelp}>Seconds to add to the doser time per notch finer (taken off when going coarser). Example: 0.2 means 1 notch finer → doser +0.2 s. Tap the number to type, or use − / +.</Text>
-            <View style={st.perNotch}>
-              <Stepper label="SECONDS PER NOTCH" unit={rawRule ? 'your setting' : ds.perNotch ? `blank = ${fmt(ds.perNotch, 2)} s learned` : 'not set yet · learning'}
-                value={rawRule || ''} onChange={v => onChangeRules({ ...(grinder.rules || {}), doserNotch: v })} step={0.1} decimals={1} />
-            </View>
-            {rawRule ? <Text style={st.perNotchHelp}>Clear the box to go back to the learned value.</Text> : null}
-          </View>
-        ) : null}
       </View>
 
       <View style={st.tiles}>
