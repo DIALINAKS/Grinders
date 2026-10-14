@@ -130,7 +130,7 @@ export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, gri
           </View>
           {!gauge ? <Note>Dial In works without room measurements. For more detailed predictions, consider a digital thermometer and humidity gauge.</Note> : null}
           {r.status === 'ready' && !r.enoughHistory ? (
-            <Note tone="warn">Not enough calibration history to predict a reliable adjustment. We recommend starting from your previous setting and checking the first extraction. The suggestion below uses your room benchmarks only.</Note>
+            <Note tone="warn">{`Not enough calibration history to predict a reliable adjustment for: ${r.notApplied.join('; ')}. Dial In hasn't measured that effect on this grinder yet, so it isn't applied. Start from your verified setting and check the first extraction. Every verified calibration teaches it.`}</Note>
           ) : null}
           <Recommendation r={r} M={M} grinder={grinder} compact />
           {r.status === 'ready' ? (

@@ -6,14 +6,19 @@ import { Gauge, Pill } from './visuals';
 import { fmt } from '../engine';
 
 const CONF_TONE = { High: 'good', Moderate: 'accent', Low: 'warn' };
+const LABEL_TONE = { 'Verified setting': 'good', 'Predicted setting': 'accent', 'Insufficient data': 'warn' };
 
 /** Confidence level and what the advice is based on. Always shown with a recommendation. */
 export function Basis({ r }) {
   return (
     <View style={st.basis}>
-      <Pill tone={CONF_TONE[r.confidence]}>Confidence: {r.confidence}</Pill>
+      <View style={st.pills}>
+        {r.label ? <Pill tone={LABEL_TONE[r.label]}>{r.label}</Pill> : null}
+        {!r.guided ? <Pill tone={CONF_TONE[r.confidence]}>Confidence: {r.confidence}</Pill> : null}
+      </View>
       <Text style={st.basisText}>Based on: {r.sourceText}</Text>
-      {r.dial.conservative ? <Text style={st.note}>This grinder's response isn't measured yet, so this is a small, safe step. The next shot measures it.</Text> : null}
+      {r.guided ? <Text style={st.note}>This grinder hasn't been measured on this coffee yet, so this is a fixed calibration step of 2 subdivisions, not a prediction. The next shot measures how this grinder responds.</Text>
+        : r.dial.conservative ? <Text style={st.note}>Using a house rule until this grinder is measured.</Text> : null}
     </View>
   );
 }
@@ -21,7 +26,7 @@ export function Basis({ r }) {
 /** Grind setting on the dial, the move, doser time and why. */
 export default function Recommendation({ r, M, grinder, onChangeRules, compact }) {
   if (r.status === 'no-shots') return <Note>Pull your first shot, then the app tells you what to change.</Note>;
-  if (r.status === 'need-more') return <Note>Log a second shot at a different grind setting so the app can measure this grinder.</Note>;
+  if (r.status === 'need-more') return <Note>Insufficient data: pull a shot at the current setting and record it. Dial In measures this grinder from your shots.</Note>;
   if (r.status === 'no-target') return <Note>Set your target time band.</Note>;
   if (r.status === 'flat') return <Note tone="warn">Changing the grind isn't moving the time much yet. Try shots further apart on the dial.</Note>;
   const d = r.dial, ds = r.dose;
@@ -34,7 +39,7 @@ export default function Recommendation({ r, M, grinder, onChangeRules, compact }
     ? `Last drop was ${fmt(ds.lastGrams)} g on ${fmt(ds.lastSeconds)} s. This time drops ${fmt(ds.target)} g.`
     : `Drops your ${fmt(ds.target)} g dose.`;
   else if (!ds.change) doseWhy = `Grind move too small to change the doser time.`;
-  else doseWhy = `${ds.change > 0 ? '+' : '−'}${fmt(Math.abs(ds.change))} s for the grind move, so it still drops ${fmt(ds.target)} g${learned ? ` (learned from ${ds.drops ? ds.drops.n : 'your'} weighed drops)` : ' (your setting)'}.`;
+  else doseWhy = `${ds.change > 0 ? '+' : '−'}${fmt(Math.abs(ds.change))} s for the grind move, so it still drops ${fmt(ds.target)} g${learned ? ` (learned from ${ds.drops ? ds.drops.n : 'your'} weighed drops)` : ' (house rule)'}.`;
 
   return (
     <View style={{ gap: S.md }}>
@@ -57,13 +62,13 @@ export default function Recommendation({ r, M, grinder, onChangeRules, compact }
       <View style={st.tiles}>
         <View style={st.tile}>
           <Text style={st.tileLabel}>EXPECTED TIME</Text>
-          <Text style={st.tileValue}>{fmt(r.predictedTime)} s</Text>
-          <Text style={st.tileSub}>{d.range ? `± ${d.range}` : 'at the new setting'}</Text>
+          <Text style={st.tileValue}>{r.predictedTime != null ? `${fmt(r.predictedTime)} s` : '–'}</Text>
+          <Text style={st.tileSub}>{r.predictedTime == null ? 'not predicted yet' : d.range ? `± ${d.range}` : 'at the new setting'}</Text>
         </View>
         <View style={st.tile}>
-          <Text style={st.tileLabel}>PER MARK</Text>
-          <Text style={st.tileValue}>{fmt(r.secondsPerMark)} s</Text>
-          <Text style={st.tileSub}>{r.slopeSource === 'benchmark' ? 'benchmark' : 'measured'}</Text>
+          <Text style={st.tileLabel}>PER SUBDIVISION</Text>
+          <Text style={st.tileValue}>{r.secondsPerMark != null ? `${fmt(r.secondsPerMark)} s` : '–'}</Text>
+          <Text style={st.tileSub}>{r.secondsPerMark == null ? 'measured from the next shot' : r.slopeSource === 'benchmark' ? 'house rule' : r.slopeSource === 'grinder' ? 'measured on other coffees' : 'measured'}</Text>
         </View>
       </View>
 
@@ -88,6 +93,7 @@ const st = StyleSheet.create({
   words: { color: C.muted, fontSize: 14, marginTop: -4 },
   reason: { color: C.muted, fontSize: 13, textAlign: 'center' },
   basis: { alignItems: 'center', gap: 4 },
+  pills: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, justifyContent: 'center' },
   basisText: { color: C.ink, fontSize: 13, textAlign: 'center' },
   note: { color: C.muted, fontSize: 12, textAlign: 'center' },
   doseTile: { backgroundColor: C.accentSoft, borderRadius: R.md, borderWidth: 1, borderColor: '#1D3B7A', padding: S.lg, alignItems: 'center', gap: 4 },

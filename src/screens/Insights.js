@@ -24,15 +24,15 @@ export default function Insights({ grinder, shots, grinderShots }) {
 
       <Card>
         <Text style={st.h}>WHAT MOVES YOUR SHOT</Text>
-        <Body muted style={{ fontSize: 12 }}>Seconds of extraction for a typical change on this grinder. "Benchmark" means still the starting value; "measured" means learned from your shots.</Body>
+        <Body muted style={{ fontSize: 12 }}>Seconds of extraction for a typical change on this grinder. "Measured" means learned from your shots; "not yet" means there isn't enough varied data on this grinder to say.</Body>
         {ins.tangled ? <Body style={{ fontSize: 12, color: C.warn }}>Temperature and humidity have moved together in your shots so far, so their effects can't be told apart yet.</Body> : null}
         {ins.effects.map(e => (
           <View key={e.label} style={{ gap: 4 }}>
             <View style={st.rowBetween}>
               <Text style={st.effLabel}>{e.label}{e.status ? <Text style={{ color: e.status === 'measured' ? C.good : C.faint }}>{` · ${e.status}`}</Text> : null}</Text>
-              <Text style={st.effVal}>{e.seconds >= 0 ? '+' : '−'}{fmt(Math.abs(e.seconds))} s</Text>
+              <Text style={st.effVal}>{e.status === 'not measured' ? 'not yet' : `${e.seconds >= 0 ? '+' : '−'}${fmt(Math.abs(e.seconds))} s`}</Text>
             </View>
-            <View style={st.track}><View style={[st.fill, { width: `${Math.min(100, (Math.abs(e.seconds) / maxEff) * 100)}%` }]} /></View>
+            <View style={st.track}><View style={[st.fill, { width: e.status === 'not measured' ? '0%' : `${Math.min(100, (Math.abs(e.seconds) / maxEff) * 100)}%` }]} /></View>
           </View>
         ))}
       </Card>
