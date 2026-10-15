@@ -224,8 +224,8 @@ export default function App() {
             return (
               <Pressable key={t.key} onPress={() => { if (t.key === 'home' && tab === 'home' && flow && flow.kind !== 'loop') setFlow(null); go(t.key); }} style={[st_.tab, on && st_.tabOn]}
                 accessibilityRole="tab" accessibilityState={{ selected: on }}>
-                <Icon name={t.icon} color={on ? C.white : C.muted} />
-                <Text style={[st_.tabText, on && { color: C.white }]}>{t.label}</Text>
+                <Icon name={t.icon} color={on ? C.onAccent : C.muted} />
+                <Text style={[st_.tabText, on && { color: C.onAccent }]}>{t.label}</Text>
               </Pressable>
             );
           })}

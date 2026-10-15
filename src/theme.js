@@ -1,21 +1,22 @@
-// Fine Dot brand on black. One dark look for the whole app.
+// Dial In palette: dark espresso ground, warm cream text, amber accent, teal for "good".
+// Matches the "Perfect Shot in Five" app screens. The logo (blue with the white dot) is unchanged.
 export const C = {
-  bg: '#05070D',
-  surface: '#0E1320',
-  surface2: '#141B2A',
-  line: '#1E2740',
-  ink: '#E7ECF6',
-  muted: '#97A2B8',
-  faint: '#7F8BA6',
-  accent: '#0A5CFF',      // Fine Dot electric blue
-  accentBright: '#2F8BFF',
-  accentSoft: '#122348',
-  brandA: '#00C2FF',
-  brandC: '#0028FF',
-  white: '#FFFFFF',
-  good: '#6CC48E',
-  warn: '#E3A266',
-  bad: '#E57B7B',
+  bg: '#16110E',          // espresso
+  surface: '#211A16',
+  surface2: '#2B221D',
+  line: '#4A3C33',
+  ink: '#F4F1EC',         // cream
+  muted: '#CFC6BB',
+  faint: '#A3978B',
+  accent: '#E3A23B',      // amber: buttons, selected states
+  accentBright: '#F0B65A',// amber for links and text
+  accentSoft: '#3A2A16',  // amber-tinted panels
+  accentLine: '#6B4E26',  // border of amber-tinted panels
+  onAccent: '#16110E',    // text on amber
+  white: '#F4F1EC',       // headline text (cream, not pure white)
+  good: '#8FC9C2',        // teal
+  warn: '#E8956A',        // rust
+  bad: '#EC8A80',
 };
 
 export const S = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24 };

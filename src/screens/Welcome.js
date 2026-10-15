@@ -42,18 +42,18 @@ export default function Welcome({ bill, onBill, onChoose }) {
 
 const st = StyleSheet.create({
   wrap: { alignItems: 'center', paddingHorizontal: S.lg, paddingTop: 64, paddingBottom: 48 },
-  glow: { position: 'absolute', top: -160, width: 420, height: 320, borderRadius: 210, backgroundColor: '#0A3A9E', opacity: 0.35 },
+  glow: { position: 'absolute', top: -160, width: 420, height: 320, borderRadius: 210, backgroundColor: C.accent, opacity: 0.12 },
   logo: { width: 96, height: 96, borderRadius: 22 },
   title: { color: C.white, fontSize: 34, fontWeight: '800', letterSpacing: 2, marginTop: S.lg },
-  tag: { color: '#9FB4D9', fontSize: 17, fontStyle: 'italic', marginTop: 4 },
+  tag: { color: C.muted, fontSize: 17, fontStyle: 'italic', marginTop: 4 },
   choose: { color: C.white, fontSize: 18, fontWeight: '600', marginTop: 28, marginBottom: S.md },
   card: { alignSelf: 'stretch', maxWidth: 440, width: '100%', alignItems: 'center', backgroundColor: C.surface, borderWidth: 1, borderColor: C.line,
     borderRadius: R.lg, padding: 22, marginBottom: S.md },
   cardName: { color: C.white, fontWeight: '800', letterSpacing: 2.5, fontSize: 16 },
-  cardSub: { color: '#B7C5E0', marginTop: 6 },
-  cardLimits: { color: '#B7C5E0', fontSize: 13, marginTop: 2 },
+  cardSub: { color: C.muted, marginTop: 6 },
+  cardLimits: { color: C.muted, fontSize: 13, marginTop: 2 },
   price: { color: C.white, fontSize: 30, fontWeight: '800', marginTop: S.md },
-  priceSub: { color: '#9FB4D9', fontSize: 12 },
-  note: { color: '#9FB4D9', fontSize: 13, textAlign: 'center', maxWidth: 440, marginTop: S.md, lineHeight: 19 },
+  priceSub: { color: C.muted, fontSize: 12 },
+  note: { color: C.muted, fontSize: 13, textAlign: 'center', maxWidth: 440, marginTop: S.md, lineHeight: 19 },
 });
 

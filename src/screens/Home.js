@@ -55,9 +55,9 @@ export default function Home({ grinder, simple, items, run, runCoffee, runCount,
       ) : null}
 
       <Pressable onPress={() => (items.length ? onAdjust(null) : onNew())} style={({ pressed }) => [st.mode, pressed && { opacity: 0.85 }]} accessibilityRole="button">
-        <Text style={st.modeTitle}>DIAL IN A COFFEE</Text>
-        <Text style={st.modeSub}>Opening up, or a new coffee.</Text>
-        <Text style={st.modeBody}>Dial In tells you the grind and doser time. You pull the shot and enter the time.</Text>
+        <Text style={[st.modeTitle, st.onAmber]}>DIAL IN A COFFEE</Text>
+        <Text style={[st.modeSub, st.onAmber]}>Opening up, or a new coffee.</Text>
+        <Text style={[st.modeBody, st.onAmber]}>Dial In tells you the grind and doser time. You pull the shot and enter the time.</Text>
       </Pressable>
 
       <Pressable onPress={() => onMaintain(null)} disabled={!items.length} style={({ pressed }) => [st.mode, st.mode2, !items.length && { opacity: 0.5 }, pressed && { opacity: 0.85 }]} accessibilityRole="button">
@@ -103,7 +103,8 @@ const st = StyleSheet.create({
   mode2: { backgroundColor: C.surface, borderWidth: 2, borderColor: C.accent },
   modeTitle: { color: C.white, fontSize: 20, fontWeight: '800', letterSpacing: 1 },
   modeSub: { color: C.white, fontSize: 15, fontWeight: '700' },
-  modeBody: { color: '#D6E2FF', fontSize: 15, lineHeight: 21 },
+  onAmber: { color: C.onAccent },
+  modeBody: { color: C.muted, fontSize: 15, lineHeight: 21 },
   row: { borderTopWidth: 1, borderTopColor: C.line, paddingTop: S.md, gap: 4 },
   rowTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   rowTitle: { color: C.ink, fontWeight: '700', fontSize: 16 },

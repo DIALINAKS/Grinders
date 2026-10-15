@@ -180,8 +180,8 @@ export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, gri
 function Fact({ label, value, strong }) {
   return (
     <View style={[st.fact, strong && { backgroundColor: C.accent }]}>
-      <Text style={[st.tileLabel, strong && { color: C.white }]}>{label}</Text>
-      <Text style={st.factVal}>{value}</Text>
+      <Text style={[st.tileLabel, strong && { color: C.onAccent }]}>{label}</Text>
+      <Text style={[st.factVal, strong && { color: C.onAccent }]}>{value}</Text>
     </View>
   );
 }
@@ -195,7 +195,7 @@ const st = StyleSheet.create({
   rowTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   rowTitle: { color: C.ink, fontWeight: '700', fontSize: 16 },
   rowSet: { color: C.accentBright, fontWeight: '800', fontSize: 18 },
-  bigField: { backgroundColor: C.accentSoft, borderRadius: R.md, borderWidth: 1, borderColor: '#1D3B7A', padding: S.md, alignItems: 'center', gap: 4 },
+  bigField: { backgroundColor: C.accentSoft, borderRadius: R.md, borderWidth: 1, borderColor: C.accentLine, padding: S.md, alignItems: 'center', gap: 4 },
   bigInput: { color: C.white, fontSize: 38, fontWeight: '800', minWidth: 120, textAlign: 'center', paddingVertical: 2 },
   tileLabel: { color: C.muted, fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
   facts: { flexDirection: 'row', gap: S.sm },
