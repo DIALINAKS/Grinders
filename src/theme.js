@@ -1,22 +1,22 @@
-// Dial In palette: dark espresso ground, warm cream text, amber accent, teal for "good".
-// Matches the "Perfect Shot in Five" app screens. The logo (blue with the white dot) is unchanged.
+// Dial In palette: Barista Life slate and cream (from baristalife.co.uk) with teal buttons.
+// The slate picks up the blue of the logo (blue with the white dot), which is unchanged.
 export const C = {
-  bg: '#16110E',          // espresso
-  surface: '#211A16',
-  surface2: '#2B221D',
-  line: '#4A3C33',
-  ink: '#F4F1EC',         // cream
-  muted: '#CFC6BB',
-  faint: '#A3978B',
-  accent: '#E3A23B',      // amber: buttons, selected states
-  accentBright: '#F0B65A',// amber for links and text
-  accentSoft: '#3A2A16',  // amber-tinted panels
-  accentLine: '#6B4E26',  // border of amber-tinted panels
-  onAccent: '#16110E',    // text on amber
-  white: '#F4F1EC',       // headline text (cream, not pure white)
-  good: '#8FC9C2',        // teal
-  warn: '#E8956A',        // rust
-  bad: '#EC8A80',
+  bg: '#1C1C34',          // deep slate
+  surface: '#272748',     // Barista Life slate
+  surface2: '#31315A',
+  line: '#45457A',
+  ink: '#FFF6DF',         // Barista Life cream
+  muted: '#C9C3D6',
+  faint: '#A29DBA',
+  accent: '#2FB3B3',      // teal: buttons, selected states
+  accentBright: '#5CCFCF',// teal for links and text
+  accentSoft: '#1E3A4A',  // teal-tinted panels
+  accentLine: '#2E6E7A',  // border of teal-tinted panels
+  onAccent: '#1C1C34',    // text on teal
+  white: '#FFF6DF',       // headline text (cream)
+  good: '#8FD8A8',        // mint green: in range
+  warn: '#F0B35A',        // amber: too slow / too fast
+  bad: '#F08A80',
 };
 
 export const S = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24 };

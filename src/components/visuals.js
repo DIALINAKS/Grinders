@@ -146,7 +146,7 @@ export function Stepper({ label, unit, value, onChange, step = 1, decimals = 1 }
 }
 
 export function Pill({ children, tone }) {
-  const bg = tone === 'warn' ? '#3A2418' : tone === 'accent' ? C.accentSoft : tone === 'good' ? '#163330' : C.surface2;
+  const bg = tone === 'warn' ? '#3D3528' : tone === 'accent' ? C.accentSoft : tone === 'good' ? '#1E3D3A' : C.surface2;
   const fg = tone === 'warn' ? C.warn : tone === 'accent' ? C.accentBright : tone === 'good' ? C.good : C.ink;
   return <View style={[st.pill, { backgroundColor: bg }]}><Text style={[st.pillText, { color: fg }]}>{children}</Text></View>;
 }
