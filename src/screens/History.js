@@ -67,7 +67,7 @@ const st = StyleSheet.create({
   date: { color: C.muted, fontSize: 12 },
   pill: { borderWidth: 1, borderRadius: R.pill, paddingHorizontal: 8, fontSize: 11, overflow: 'hidden' },
   main: { color: C.ink, fontSize: 15 },
-  b: { fontWeight: '800', color: C.accentBright },
+  b: { fontWeight: '800', color: C.teal },
   sub: { color: C.muted, fontSize: 12 },
   del: { color: C.bad, fontSize: 12, marginTop: 2 },
   link: { color: C.accentBright, fontSize: 12, fontWeight: '700' },

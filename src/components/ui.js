@@ -84,7 +84,7 @@ export function Button({ title, onPress, kind = 'primary', disabled, style }) {
     <Pressable onPress={onPress} disabled={disabled} accessibilityRole="button"
       style={({ pressed }) => [st.btn, kind === 'secondary' && st.btnSecondary, kind === 'link' && st.btnLink,
         disabled && { opacity: 0.4 }, pressed && { opacity: 0.8 }, style]}>
-      <Text style={[st.btnText, kind !== 'primary' && { color: C.accentBright }]}>{title}</Text>
+      <Text style={[st.btnText, kind !== 'primary' && { color: C.accentBright, fontWeight: '700', fontSize: 16 }]}>{title}</Text>
     </Pressable>
   );
 }
@@ -100,7 +100,7 @@ export function Note({ children, tone }) {
 const st = StyleSheet.create({
   label: { color: C.muted, fontSize: 11, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 6 },
   card: { backgroundColor: C.surface, borderRadius: R.lg, borderWidth: 1, borderColor: C.line, padding: S.lg, gap: S.md },
-  cardAccent: { backgroundColor: C.accentSoft, borderColor: C.papaya, borderWidth: 1.5 },
+  cardAccent: { backgroundColor: C.surface, borderColor: C.line },
   cardWarn: { borderColor: C.warn },
   h2: { color: C.ink, fontSize: 18, fontWeight: '700' },
   body: { color: C.ink, fontSize: 14, lineHeight: 20 },
@@ -110,17 +110,17 @@ const st = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: S.md },
   seg: { flexDirection: 'row', borderWidth: 1, borderColor: C.line, borderRadius: R.sm, overflow: 'hidden' },
   segItem: { flex: 1, paddingVertical: 10, alignItems: 'center', backgroundColor: C.surface2 },
-  segOn: { backgroundColor: C.accent },
+  segOn: { backgroundColor: C.teal },
   segText: { color: C.muted, fontWeight: '600', fontSize: 13 },
-  segTextOn: { color: C.onAccent },
+  segTextOn: { color: C.onTeal },
   chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: R.pill, borderWidth: 1, borderColor: C.line, backgroundColor: C.surface },
-  chipOn: { backgroundColor: C.accent, borderColor: C.accent },
-  chipAdd: { borderStyle: 'dashed', borderColor: C.papaya, backgroundColor: 'transparent' },
+  chipOn: { backgroundColor: C.teal, borderColor: C.teal },
+  chipAdd: { borderStyle: 'dashed', borderColor: C.accentBright, backgroundColor: 'transparent' },
   chipText: { color: C.ink, fontWeight: '600', fontSize: 14 },
-  chipTextOn: { color: C.onAccent },
-  btn: { backgroundColor: C.accent, borderRadius: R.pill, paddingVertical: 13, paddingHorizontal: 18, alignItems: 'center' },
+  chipTextOn: { color: C.onTeal },
+  btn: { backgroundColor: C.accent, borderRadius: R.pill, paddingVertical: 14, paddingHorizontal: 18, alignItems: 'center' },
   btnSecondary: { backgroundColor: 'transparent', borderWidth: 1, borderColor: C.line },
   btnLink: { backgroundColor: 'transparent', paddingVertical: 6, paddingHorizontal: 0, alignItems: 'flex-start' },
-  btnText: { color: C.onAccent, fontWeight: '700', fontSize: 15 },
+  btnText: { color: C.onAccent, fontWeight: '800', fontSize: 19 },
   note: { borderWidth: 1, borderColor: C.line, borderRadius: R.md, padding: S.md },
 });

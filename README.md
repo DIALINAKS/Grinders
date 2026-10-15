@@ -16,6 +16,12 @@ This is the React Native / Expo version of Dial In. It runs on iPhone and Androi
 - **History** (with predicted vs actual), **Insights** (what moves your shot, benchmark vs measured, prediction accuracy) and **Account** tabs.
 - **Data from the first build carries over:** typed coffee names become coffee profiles, and the latest in-band shot for each grinder + coffee becomes its saved calibration.
 
+## Look and feel
+
+- **Colours** (`src/theme.js`): Midnight Espresso `#202033` background, Roasted Slate `#2C2B40` cards and navigation, Dial In Blue `#078BE8` for main actions (with `#3FA9F5` for blue text and links, so it reads on dark), Soft Turquoise `#39B8B5` for readings and selections, Warm Ivory `#F5EFE5` headings, Oat Milk `#C9BEAE` secondary text. Amber `#F0B35A` is kept for genuine warnings only.
+- Primary button labels are large and bold so white on Dial In Blue meets contrast guidance.
+- The logo is the original blue Fine Dot mark.
+
 ## Simple mode and the one-screen shot loop
 
 - **Simple mode is the default.** The barista only enters the shot time (plus Quiet / Steady / Busy on fan-cooled grinders like the Compak E6). Switch to **More detail** in Account for room temperature, humidity, taste and charts.

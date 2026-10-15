@@ -96,7 +96,7 @@ export default function Recommendation({ r, M, grinder, onChangeRules, compact }
 }
 
 const st = StyleSheet.create({
-  big: { color: C.white, fontSize: 64, fontWeight: '800', letterSpacing: -1 },
+  big: { color: C.teal, fontSize: 64, fontWeight: '800', letterSpacing: -1 },
   words: { color: C.muted, fontSize: 14, marginTop: -4 },
   reason: { color: C.muted, fontSize: 13, textAlign: 'center' },
   basis: { alignItems: 'center', gap: 4 },

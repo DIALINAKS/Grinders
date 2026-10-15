@@ -54,17 +54,22 @@ export default function Home({ grinder, simple, items, run, runCoffee, runCount,
         </Card>
       ) : null}
 
-      <Pressable onPress={() => (items.length ? onAdjust(null) : onNew())} style={({ pressed }) => [st.mode, pressed && { opacity: 0.85 }]} accessibilityRole="button">
-        <Text style={[st.modeTitle, st.onAmber]}>DIAL IN A COFFEE</Text>
-        <Text style={[st.modeSub, st.onAmber]}>Opening up, or a new coffee.</Text>
-        <Text style={[st.modeBody, st.onAmber]}>Dial In tells you the grind and doser time. You pull the shot and enter the time.</Text>
-      </Pressable>
+      <View style={st.mode}>
+        <Text style={[st.kicker, { color: C.accentBright }]}>OPENING UP · NEW COFFEE</Text>
+        <Text style={st.modeTitle}>Dial in a coffee</Text>
+        <Text style={st.modeBody}>Dial In tells you the grind and doser time. You pull the shot and enter the time.</Text>
+        <Button title="Start dial-in" onPress={() => (items.length ? onAdjust(null) : onNew())} />
+      </View>
 
-      <Pressable onPress={() => onMaintain(null)} disabled={!items.length} style={({ pressed }) => [st.mode, st.mode2, !items.length && { opacity: 0.5 }, pressed && { opacity: 0.85 }]} accessibilityRole="button">
-        <Text style={st.modeTitle}>MAINTAIN CALIBRATION</Text>
-        <Text style={st.modeSub}>During service.</Text>
+      <View style={st.mode}>
+        <Text style={[st.kicker, { color: C.teal }]}>DURING SERVICE</Text>
+        <Text style={st.modeTitle}>Maintain calibration</Text>
         <Text style={st.modeBody}>{items.length ? 'Getting busy or warmer? Check whether the grinder needs a change.' : run ? 'Save the calibration in progress first: tap Continue above.' : 'Save a calibration first, then this unlocks.'}</Text>
-      </Pressable>
+        <Pressable onPress={() => onMaintain(null)} disabled={!items.length} accessibilityRole="button"
+          style={({ pressed }) => [st.btn2, !items.length && { opacity: 0.4 }, pressed && { opacity: 0.8 }]}>
+          <Text style={st.btn2Text}>Check grinder</Text>
+        </Pressable>
+      </View>
 
       <Card>
         <Text style={st.h}>SAVED ON {grinder.name.toUpperCase()}</Text>
@@ -99,12 +104,12 @@ export default function Home({ grinder, simple, items, run, runCoffee, runCount,
 const st = StyleSheet.create({
   h: { color: C.ink, fontSize: 15, fontWeight: '800', letterSpacing: 0.8 },
   small: { color: C.muted, fontSize: 13 },
-  mode: { backgroundColor: C.accent, borderRadius: R.lg, padding: S.xl, gap: 6 },
-  mode2: { backgroundColor: C.surface, borderWidth: 2, borderColor: C.papaya },
-  modeTitle: { color: C.white, fontSize: 20, fontWeight: '800', letterSpacing: 1 },
-  modeSub: { color: C.white, fontSize: 15, fontWeight: '700' },
-  onAmber: { color: C.onAccent },
-  modeBody: { color: C.muted, fontSize: 15, lineHeight: 21 },
+  mode: { backgroundColor: C.surface, borderRadius: R.lg, borderWidth: 1, borderColor: C.line, padding: S.xl, gap: 8 },
+  kicker: { fontSize: 12, fontWeight: '800', letterSpacing: 1.2 },
+  modeTitle: { color: C.ink, fontSize: 24, fontWeight: '800' },
+  modeBody: { color: C.muted, fontSize: 15, lineHeight: 21, marginBottom: 6 },
+  btn2: { borderRadius: R.pill, borderWidth: 1.5, borderColor: C.teal, paddingVertical: 13, alignItems: 'center' },
+  btn2Text: { color: C.teal, fontWeight: '800', fontSize: 18 },
   row: { borderTopWidth: 1, borderTopColor: C.line, paddingTop: S.md, gap: 4 },
   rowTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   rowTitle: { color: C.ink, fontWeight: '700', fontSize: 16 },

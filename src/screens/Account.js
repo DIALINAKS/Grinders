@@ -77,7 +77,7 @@ const st = StyleSheet.create({
   statLabel: { color: C.muted, fontSize: 11, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase' },
   statValue: { color: C.ink, fontWeight: '700', marginTop: 2 },
   tier: { borderWidth: 1, borderColor: C.line, borderRadius: R.md, padding: S.md, gap: 2 },
-  tierOn: { borderColor: C.accent, backgroundColor: C.accentSoft },
+  tierOn: { borderColor: C.teal, backgroundColor: C.tealSoft },
   tierName: { color: C.ink, fontSize: 17, fontWeight: '800' },
   tierSub: { color: C.muted, fontSize: 13 },
   tierPrice: { color: C.ink, fontSize: 16, fontWeight: '700', marginTop: 4 },

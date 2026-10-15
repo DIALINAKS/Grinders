@@ -224,8 +224,8 @@ export default function App() {
             return (
               <Pressable key={t.key} onPress={() => { if (t.key === 'home' && tab === 'home' && flow && flow.kind !== 'loop') setFlow(null); go(t.key); }} style={[st_.tab, on && st_.tabOn]}
                 accessibilityRole="tab" accessibilityState={{ selected: on }}>
-                <Icon name={t.icon} color={on ? C.onAccent : C.muted} />
-                <Text style={[st_.tabText, on && { color: C.onAccent }]}>{t.label}</Text>
+                <Icon name={t.icon} color={on ? C.accentBright : C.muted} />
+                <Text style={[st_.tabText, on && { color: C.ink }]}>{t.label}</Text>
               </Pressable>
             );
           })}
@@ -269,6 +269,6 @@ const st_ = StyleSheet.create({
   foot: { color: C.faint, fontSize: 12, textAlign: 'center' },
   tabs: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: C.line, backgroundColor: C.surface, paddingHorizontal: 6, paddingTop: 6, paddingBottom: Platform.OS === 'ios' ? 2 : 8 },
   tab: { flex: 1, alignItems: 'center', gap: 3, paddingVertical: 6, borderRadius: R.md },
-  tabOn: { backgroundColor: C.accent },
+  tabOn: { backgroundColor: C.surface2 },
   tabText: { color: C.muted, fontWeight: '700', fontSize: 11, letterSpacing: 0.6 },
 });

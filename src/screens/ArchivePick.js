@@ -29,7 +29,7 @@ export default function ArchivePick({ tier, grinders, shots, onKeep }) {
 
 const st = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: S.md, borderWidth: 1, borderColor: C.line, borderRadius: R.md, padding: S.md },
-  rowOn: { borderColor: C.accent, backgroundColor: C.accentSoft },
+  rowOn: { borderColor: C.teal, backgroundColor: C.tealSoft },
   dot: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: C.muted },
   dotOn: { borderColor: C.accentBright, backgroundColor: C.accentBright },
   name: { color: C.ink, fontWeight: '700', flex: 1 },

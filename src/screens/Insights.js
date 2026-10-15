@@ -64,7 +64,7 @@ const st = StyleSheet.create({
   effLabel: { color: C.ink, fontSize: 13 },
   effVal: { color: C.ink, fontWeight: '700' },
   track: { height: 8, borderRadius: 4, backgroundColor: C.surface2, overflow: 'hidden' },
-  fill: { height: 8, borderRadius: 4, backgroundColor: C.accent },
+  fill: { height: 8, borderRadius: 4, backgroundColor: C.teal },
   stats: { flexDirection: 'row', gap: S.sm },
   stat: { flex: 1, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderRadius: R.md, padding: S.md },
   statLabel: { color: C.muted, fontSize: 11 },

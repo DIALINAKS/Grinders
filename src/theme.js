@@ -1,23 +1,26 @@
-// Dial In palette: Barista Life slate and cream (from baristalife.co.uk) with teal buttons.
-// The slate picks up the blue of the logo (blue with the white dot), which is unchanged.
+// Dial In palette: warm dark espresso-slate ground, Dial In Blue for actions,
+// Soft Turquoise for readings and selections, Warm Ivory and Oat Milk text.
+// Blue matches the Fine Dot logo (blue with the white dot).
 export const C = {
-  bg: '#1C1C34',          // deep slate
-  surface: '#272748',     // Barista Life slate
-  surface2: '#31315A',
-  line: '#45457A',
-  ink: '#FFF6DF',         // Barista Life cream
-  muted: '#C9C3D6',
-  faint: '#A29DBA',
-  accent: '#2FB3B3',      // teal: buttons, selected states
-  accentBright: '#5CCFCF',// teal for links and text
-  accentSoft: '#1E3A4A',  // teal-tinted panels
-  accentLine: '#2E6E7A',  // border of teal-tinted panels
-  papaya: '#FF8000',     // McLaren papaya orange: a few highlight borders only
-  onAccent: '#1C1C34',    // text on teal
-  white: '#FFF6DF',       // headline text (cream)
-  good: '#8FD8A8',        // mint green: in range
-  warn: '#F0B35A',        // amber: too slow / too fast
-  bad: '#F08A80',
+  bg: '#202033',          // Midnight Espresso
+  surface: '#2C2B40',     // Roasted Slate: cards and navigation
+  surface2: '#37364F',    // raised surfaces inside cards
+  line: '#45445E',
+  ink: '#F5EFE5',         // Warm Ivory: headings and key numbers
+  muted: '#C9BEAE',       // Oat Milk: secondary text
+  faint: '#9A93A6',       // tertiary text (on bg and cards only)
+  accent: '#078BE8',      // Dial In Blue: primary actions
+  accentBright: '#3FA9F5',// Dial In Blue as text and links (readable on dark)
+  onAccent: '#FFFFFF',    // text on Dial In Blue (large, bold)
+  accentSoft: '#29304A',  // input and reading tiles
+  accentLine: '#3B4766',
+  teal: '#39B8B5',        // Soft Turquoise: readings, selections, secondary accent
+  onTeal: '#202033',
+  tealSoft: '#223A42',
+  white: '#F5EFE5',
+  good: '#8FD8A8',        // in range
+  warn: '#F0B35A',        // genuine warnings only
+  bad: '#F08A80',         // errors
 };
 
 export const S = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24 };

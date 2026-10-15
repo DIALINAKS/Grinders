@@ -36,7 +36,7 @@ export default function NewCoffee({ grinder, coffees, onCreateCoffee, onStart, o
       <View style={st.steps}>
         {STEPS.map((s, i) => (
           <View key={s} style={[st.stepPill, i === step && st.stepOn, i < step && st.stepDone]}>
-            <Text style={[st.stepText, i === step ? { color: C.onAccent } : i < step && { color: C.ink }]}>{i + 1} {s}</Text>
+            <Text style={[st.stepText, i === step ? { color: C.onTeal } : i < step && { color: C.ink }]}>{i + 1} {s}</Text>
           </View>
         ))}
       </View>
@@ -100,11 +100,11 @@ const st = StyleSheet.create({
   small: { color: C.muted, fontSize: 12 },
   steps: { flexDirection: 'row', gap: S.sm },
   stepPill: { flex: 1, paddingVertical: 8, borderRadius: R.pill, borderWidth: 1, borderColor: C.line, alignItems: 'center', backgroundColor: C.surface },
-  stepOn: { backgroundColor: C.accent, borderColor: C.accent },
+  stepOn: { backgroundColor: C.teal, borderColor: C.teal },
   stepDone: { backgroundColor: C.accentSoft, borderColor: C.accentLine },
   stepText: { color: C.muted, fontWeight: '700', fontSize: 13 },
   row: { borderWidth: 1, borderColor: C.line, borderRadius: R.md, padding: S.md, gap: 2, backgroundColor: C.surface2 },
-  rowOn: { borderColor: C.accent },
+  rowOn: { borderColor: C.teal },
   rowTitle: { color: C.ink, fontWeight: '700', fontSize: 16 },
   steppers: { flexDirection: 'row', flexWrap: 'wrap', gap: S.sm },
 });
