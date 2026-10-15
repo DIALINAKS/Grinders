@@ -40,7 +40,7 @@ export default function History({ shots, epochStart, onDelete, onToggleExclude, 
               {s.dose ? ` (1:${fmt(s.yield / s.dose)})` : ''}
             </Text>
           )}
-          {s.secPerSubdivision != null ? <Text style={st.sub}>From {s.prevSetting}: {Math.abs(s.stepsFiner)} subdivision{Math.abs(s.stepsFiner) === 1 ? '' : 's'} {s.stepsFiner > 0 ? 'finer' : 'coarser'} · {fmt(Math.abs(s.secPerSubdivision), 2)} s per subdivision</Text> : null}
+          {s.secPerSubdivision != null ? <Text style={st.sub}>From {s.prevSetting}: {Math.abs(s.stepsFiner)} notch{Math.abs(s.stepsFiner) === 1 ? '' : 'es'} {s.stepsFiner > 0 ? 'finer' : 'coarser'} · {fmt(Math.abs(s.secPerSubdivision), 2)} s per notch</Text> : null}
           {s.excluded ? (
             <View style={{ flexDirection: 'row', gap: S.md, alignItems: 'center', flexWrap: 'wrap' }}>
               <Text style={[st.sub, { color: C.warn, flexShrink: 1 }]}>Set aside: {s.excludedWhy || 'invalid'}</Text>

@@ -46,6 +46,7 @@ export default function App() {
   }
 
   /* ---------- derived ---------- */
+  const simple = st.detail !== true;   // simple mode is the default: time only
   const grinders = st.grinders;
   const hasSample = grinders.some(g => g.sample);
   const grinder = grinders.find(g => g.id === st.grinderId) || activeGrinders(grinders)[0] || grinders[0] || null;
@@ -103,9 +104,10 @@ export default function App() {
     body = <ArchivePick tier={st.tier} grinders={grinders.filter(g => !g.sample)} shots={st.shots} onKeep={keepGrinder} />;
   } else if (tab === 'account') {
     body = <Account tier={st.tier} bill={st.bill} grinders={grinders} shots={st.shots} hasSample={hasSample}
-      onBill={b => update(s => ({ ...s, bill: b }))} onTier={t => update(s => applyTier(s, t))} onRemoveSample={() => { update(withoutSample); setFlow(null); }} />;
+      onBill={b => update(s => ({ ...s, bill: b }))} onTier={t => update(s => applyTier(s, t))}
+      detail={!simple} onDetail={v => update(s => ({ ...s, detail: v }))} onRemoveSample={() => { update(withoutSample); setFlow(null); }} />;
   } else if (!grinder || overlay === 'register') {
-    body = <Setup first={!grinder} tier={st.tier} grinders={grinders} hasSample={hasSample} onRegister={registerGrinder}
+    body = <Setup first={!grinder} simple={simple} tier={st.tier} grinders={grinders} hasSample={hasSample} onRegister={registerGrinder}
       onSample={() => { update(withSample); setOverlay(null); setFlow(null); setTab('home'); }} onClose={() => setOverlay(null)} onSeePlans={() => go('account')} />;
   } else if (overlay === 'rules') {
     body = (
@@ -119,7 +121,7 @@ export default function App() {
   } else if (tab === 'home') {
     if (flow && flow.kind === 'loop' && run) {
       body = <ShotLoop grinder={grinder} coffee={coffeeById(st, run.coffeeId) || { name: 'Coffee' }} run={run} runShots={runShots}
-        coffeeShots={coffeeShots(run.coffeeId)} grinderShots={epoch} first={run.first} blocked={blocked}
+        coffeeShots={coffeeShots(run.coffeeId)} grinderShots={epoch} first={run.first} blocked={blocked} simple={simple}
         onRecord={recordShot} onDoseCheck={recordDoseCheck} onToggleExclude={toggleExclude} onSave={saveCal} onRestart={restartRun} onStop={() => setFlow(null)}
         onChangeRules={changeRules} onSeePlans={() => go('account')} />;
     } else if (flow && flow.kind === 'new') {
@@ -127,19 +129,20 @@ export default function App() {
         onStart={r => startRun(r, null)} onCancel={() => setFlow(null)} />;
     } else if (flow && flow.kind === 'adjust') {
       body = <Adjust grinder={grinder} items={items} startCoffeeId={flow.coffeeId} coffeeShots={coffeeShots} grinderShots={epoch}
-        maintain={!!flow.maintain} onStart={startRun} onCancel={() => setFlow(null)} onNewCoffee={() => setFlow({ kind: 'new' })} />;
+        maintain={!!flow.maintain} simple={simple} onStart={startRun}
+        onRedial={(cid, cal) => setFlow({ kind: 'new', preset: { coffeeId: cid, dose: cal.dose, yield: cal.yield } })} onCancel={() => setFlow(null)} onNewCoffee={() => setFlow({ kind: 'new' })} />;
     } else if (flow && flow.kind === 'saved') {
       const c = coffeeById(st, flow.coffeeId), k = activeCal(st, grinder, flow.coffeeId);
       body = (
         <Card tone="accent">
           <Text style={st_.h}>{c ? c.name.toUpperCase() : 'COFFEE'} · SAVED</Text>
-          <Body>Your coffee is dialled in. We've saved your settings so you can return to this coffee in the future.</Body>
-          {k ? <Body muted>Setting {k.setting} · {fmt(k.dose)} g → {fmt(k.yield)} g · {fmt(k.time)} s{k.doserTime != null ? ` · doser ${fmt(k.doserTime)} s` : ''}{k.roomTemp != null ? ` · ${fmt(k.roomTemp)} °C` : ''}{k.humidity != null ? ` · ${fmt(k.humidity, 0)} % RH` : ''} · confidence {k.confidence}</Body> : null}
+          <Body>Dialled in and saved. Next time, Dial In starts from these settings.</Body>
+          {k ? <Body muted>Grinder {k.setting} · {fmt(k.dose)} g → {fmt(k.yield)} g · {fmt(k.time)} s{k.doserTime != null ? ` · doser ${fmt(k.doserTime)} s` : ''}{k.roomTemp != null ? ` · ${fmt(k.roomTemp)} °C` : ''}{k.humidity != null ? ` · ${fmt(k.humidity, 0)} %` : ''}</Body> : null}
           <Button title="Back to Dial In" onPress={() => setFlow(null)} />
         </Card>
       );
     } else {
-      body = <Home grinder={grinder} items={items} run={run} runCoffee={run ? coffeeById(st, run.coffeeId) : null} runCount={runShots.filter(x => x.time != null).length}
+      body = <Home grinder={grinder} simple={simple} items={items} run={run} runCoffee={run ? coffeeById(st, run.coffeeId) : null} runCount={runShots.filter(x => x.time != null).length}
         onNew={() => setFlow({ kind: 'new' })} onAdjust={cid => setFlow({ kind: 'adjust', coffeeId: cid })} onContinue={() => setFlow({ kind: 'loop' })}
         onMaintain={cid => setFlow({ kind: 'adjust', coffeeId: cid, maintain: true })}
         onGauge={v => setGrinder(grinder.id, { gauge: v })}
@@ -249,9 +252,9 @@ const st_ = StyleSheet.create({
   back: { color: C.accentBright, fontWeight: '700', fontSize: 15 },
   link: { color: C.accentBright, fontWeight: '700', fontSize: 13 },
   sampleNote: { color: C.warn, fontSize: 12 },
-  foot: { color: C.faint, fontSize: 11, textAlign: 'center' },
+  foot: { color: C.faint, fontSize: 12, textAlign: 'center' },
   tabs: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: C.line, backgroundColor: C.surface, paddingHorizontal: 6, paddingTop: 6, paddingBottom: Platform.OS === 'ios' ? 2 : 8 },
   tab: { flex: 1, alignItems: 'center', gap: 3, paddingVertical: 6, borderRadius: R.md },
   tabOn: { backgroundColor: C.accent },
-  tabText: { color: C.muted, fontWeight: '700', fontSize: 9.5, letterSpacing: 0.6 },
+  tabText: { color: C.muted, fontWeight: '700', fontSize: 11, letterSpacing: 0.6 },
 });

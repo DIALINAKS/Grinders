@@ -6,7 +6,7 @@ export const C = {
   line: '#1E2740',
   ink: '#E7ECF6',
   muted: '#97A2B8',
-  faint: '#5F6B85',
+  faint: '#7F8BA6',
   accent: '#0A5CFF',      // Fine Dot electric blue
   accentBright: '#2F8BFF',
   accentSoft: '#122348',

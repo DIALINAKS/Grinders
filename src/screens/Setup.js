@@ -5,7 +5,7 @@ import { Card, Field, Label, Chips, Button, Body, Note, Segmented } from '../com
 import { MODELS, tierOf, canRegisterGrinder } from '../engine';
 
 /** First run, and "Register a grinder": set up a grinder, or explore with sample shots. */
-export default function Setup({ tier, grinders, hasSample, onRegister, onSample, onClose, onSeePlans, first }) {
+export default function Setup({ simple, tier, grinders, hasSample, onRegister, onSample, onClose, onSeePlans, first }) {
   const [model, setModel] = useState('Mythos One');
   const [name, setName] = useState('');
   const [gauge, setGauge] = useState(null);
@@ -18,7 +18,7 @@ export default function Setup({ tier, grinders, hasSample, onRegister, onSample,
     if (grinders.some(g => g.name.trim().toLowerCase() === n.toLowerCase())) {
       setErr(`You already have a grinder called ${n}. Give this one a different name, e.g. "${n} – bar 2".`); return;
     }
-    if (gauge === null) { setErr('Tell us whether you have a temperature and humidity gauge.'); return; }
+    if (!simple && gauge === null) { setErr('Tell us whether you have a temperature and humidity gauge.'); return; }
     onRegister(n, model, gauge);
   };
 
@@ -37,14 +37,14 @@ export default function Setup({ tier, grinders, hasSample, onRegister, onSample,
             <View><Label>Model</Label><Chips items={MODELS.map(m => ({ key: m, label: m }))} value={model} onChange={setModel} /></View>
             <Field label="Name" value={name} onChangeText={setName} keyboardType="default" width="full"
               placeholder={model === 'Other' ? 'e.g. Mahlkönig E65S' : `e.g. ${model} – bar 1`} />
-            <View style={{ gap: 6 }}>
+            {!simple ? <View style={{ gap: 6 }}>
               <Label>Do you have a temperature and humidity gauge?</Label>
               <Segmented options={[{ value: true, label: 'Yes, I can measure' }, { value: false, label: "No, I don't" }]} value={gauge} onChange={setGauge} />
-              <Body muted style={{ fontSize: 12 }}>Dial In works fully without one. You can change this later.</Body>
-            </View>
+              <Body muted style={{ fontSize: 13 }}>Dial In works fully without one. You can change this later.</Body>
+            </View> : null}
             {err ? <Text style={{ color: C.bad }}>{err}</Text> : null}
             <Button title="Register grinder" onPress={add} />
-            <Body muted style={{ fontSize: 12 }}>Mythos One and Compak E6 start with their known dial layout. Settings are always worked out from your own grinder, never from another one.</Body>
+            <Body muted style={{ fontSize: 13 }}>Settings are always worked out from your own grinder.</Body>
           </>
         )}
         {!first ? <Button title="Close" kind="secondary" onPress={onClose} /> : null}

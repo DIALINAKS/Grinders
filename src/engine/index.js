@@ -80,8 +80,8 @@ export function toDial(x, M) {
 }
 export const fmtDial = (x, M) => { if (!ok(x)) return '–'; const t = toDial(x, M); return `${t.w}.${t.mk}${FR[t.q]}`; };
 export const fracText = q => { const whole = Math.floor(q + 1e-9), f = Math.round((q - whole) * QTR); return (whole ? String(whole) : '') + FR[f] || '0'; };
-export const marksText = q => `${fracText(q)} subdivision${q > 1 ? 's' : ''}`;
-export const dialWords = (x, M) => { const t = toDial(x, M), d = t.mk + t.q / QTR; return d ? `${t.w}, mark ${fracText(d)}` : `on the ${t.w}`; };
+export const marksText = q => `${fracText(q)} notch${q > 1 ? 'es' : ''}`;
+export const dialWords = (x, M) => { const t = toDial(x, M), d = t.mk + t.q / QTR; return d ? `number ${t.w}, notch ${fracText(d)}` : `on the ${t.w}`; };
 /** A dial value (notches) as what the barista types: 4 + 3/6 → "4.3". */
 export const toEntry = (x, M) => { const w = Math.floor(x + 1e-9), d = Math.round((x - w) * M * 4) / 4; return String(+(w + d / 10).toFixed(3)); };
 
@@ -89,7 +89,7 @@ export function checkDialEntry(v, M) {
   if (!ok(v)) return 'Enter the grind setting.';
   if (M >= 10) return null;
   const w = Math.floor(v + 1e-9), d = (v - w) * 10;
-  if (d >= M - 1e-9) return `This grinder has ${M} marks between numbers, so the first decimal goes from .0 to .${M - 1}. For example, 4.3 = mark 3 and 4.35 = halfway past mark 3.`;
+  if (d >= M - 1e-9) return `This grinder has ${M} notches between numbers, so the first decimal goes from .0 to .${M - 1}. For example, 4.3 = notch 3 and 4.35 = halfway past notch 3.`;
   return null;
 }
 
@@ -539,7 +539,7 @@ export function insights({ shots, grinderShots, rules, gauge = true }) {
     const b = name => m.beta[2 + COV.indexOf(name)];
     const house = benchmarks(rules).house;
     const st = k => (m.env[k] && m.env[k].measured ? 'measured' : house ? 'house rule' : 'not measured');
-    effects = [{ label: 'Grind: 1 subdivision finer', seconds: Math.abs(m.beta[1]) / M, status: m.slopeSource === 'benchmark' ? 'house rule' : 'measured' }];
+    effects = [{ label: 'Grind: 1 notch finer', seconds: Math.abs(m.beta[1]) / M, status: m.slopeSource === 'benchmark' ? 'house rule' : 'measured' }];
     if (gauge) effects.push(
       { label: 'Room temperature: +2 °C', seconds: b('roomTemp') / SCALE.roomTemp * 2, status: st('roomTemp') },
       { label: 'Humidity: +10 % RH', seconds: b('humidity') / SCALE.humidity * 10, status: st('humidity') });
@@ -618,4 +618,23 @@ export function priceText(tierId, bill) {
   if (!T.month) return { main: '£0', sub: 'Free forever' };
   if (bill === 'year') return { main: `${money(T.year)}/year`, sub: `Save ${Math.round((1 - T.year / (T.month * 12)) * 100)}% vs monthly` };
   return { main: `${money(T.month)}/month`, sub: `or ${money(T.year)}/year` };
+}
+
+
+/* ---------------- re-dial check ----------------
+   Small drifts get a suggested tweak. A big shift since the coffee was dialled in means the
+   saved settings are no longer a safe starting point, so the barista is asked to dial in again. */
+export const REDIAL = { roomTemp: 4, humidity: 15, workload: 2 };
+
+/** Returns a plain-English reason to dial in again, or null. Missing readings are never compared. */
+export function redialCheck(cal, now, rules) {
+  if (!cal || !now) return null;
+  const why = [];
+  const a = num(cal.roomTemp), b = num(now.roomTemp);
+  if (a !== null && b !== null && Math.abs(b - a) >= REDIAL.roomTemp) why.push(`room ${fmt(a)} → ${fmt(b)} °C`);
+  const h0 = num(cal.humidity), h1 = num(now.humidity);
+  if (h0 !== null && h1 !== null && Math.abs(h1 - h0) >= REDIAL.humidity) why.push(`humidity ${fmt(h0, 0)} → ${fmt(h1, 0)} %`);
+  const w0 = num(cal.workload), w1 = num(now.workload);
+  if (rules && rules.burr === 'fan' && w0 !== null && w1 !== null && Math.abs(w1 - w0) >= REDIAL.workload) why.push(`${LOADS[w0] || 'quiet'} → ${LOADS[w1] || 'busy'}`.toLowerCase());
+  return why.length ? why.join(', ') : null;
 }

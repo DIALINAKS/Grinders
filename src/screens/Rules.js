@@ -6,7 +6,7 @@ import { rulesFor } from '../engine';
 
 const MARKS = [10, 8, 6, 5, 4, 3, 2];
 const REASONS = ['Burr change', 'Service', 'Dial zero reset', 'Other'];
-const STEPS = [{ value: 1, label: '1 subdivision' }, { value: 0.5, label: '½' }, { value: 0.25, label: '¼' }];
+const STEPS = [{ value: 1, label: '1 notch' }, { value: 0.5, label: '½' }, { value: 0.25, label: '¼' }];
 
 /** Grinder settings: dial layout, smallest step, gauge, optional house rules, recalibration. */
 export default function Rules({ grinder, onChange, readOnly, onGauge, onRecalibrate }) {
@@ -63,8 +63,8 @@ export default function Rules({ grinder, onChange, readOnly, onGauge, onRecalibr
               <Field label="Extraction seconds per number" value={r.step} onChangeText={set('step')} editable={!readOnly} />
               <Field label="Room °C per number" value={r.deg} onChangeText={set('deg')} editable={!readOnly} />
               <Field label="% RH that equals 1 °C" value={r.humEq} onChangeText={set('humEq')} editable={!readOnly} />
-              {r.burr === 'fan' ? <Field label="Busier step: subdivisions coarser" value={r.loadMarks} onChangeText={set('loadMarks')} editable={!readOnly} /> : null}
-              <Field label="Doser seconds per subdivision" value={r.doserNotch} onChangeText={set('doserNotch')} placeholder="Blank: learned" editable={!readOnly} />
+              {r.burr === 'fan' ? <Field label="Busier step: notches coarser" value={r.loadMarks} onChangeText={set('loadMarks')} editable={!readOnly} /> : null}
+              <Field label="Doser seconds per notch" value={r.doserNotch} onChangeText={set('doserNotch')} placeholder="Blank: learned" editable={!readOnly} />
             </Grid>
             <View style={{ gap: S.sm }}>
               <Label>When the room warms up</Label>

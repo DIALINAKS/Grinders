@@ -5,7 +5,7 @@ import { Card, Button, Body, Note, Label, Segmented } from '../components/ui';
 import { Stepper } from '../components/visuals';
 import Recommendation from '../components/Recommendation';
 import { coffeeLine } from '../components/CoffeeForm';
-import { recommend, rulesFor, dialMarks, checkDialEntry, fmt, num } from '../engine';
+import { recommend, rulesFor, dialMarks, checkDialEntry, fmt, num, redialCheck } from '../engine';
 
 const LOADS = [{ value: 0, label: 'Quiet' }, { value: 1, label: 'Steady' }, { value: 2, label: 'Busy' }];
 const str = v => (v == null || v === '' ? '' : String(v));
@@ -15,13 +15,16 @@ const when = ts => new Date(ts).toLocaleDateString(undefined, { day: 'numeric', 
  * Mode 2 · Adjust an existing coffee. Uses the coffee's saved calibration on THIS grinder,
  * the grinder's confirmed position and today's room to predict the setting before the first shot.
  */
-export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, grinderShots, maintain, onStart, onCancel, onNewCoffee }) {
+export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, grinderShots, maintain, simple, onStart, onCancel, onNewCoffee, onRedial }) {
   const rules = rulesFor(grinder);
   const M = dialMarks(rules);
-  const gauge = grinder.gauge === true;
+  const gauge = !simple && grinder.gauge === true;
+  const fan = rules.burr === 'fan';
+  const askNow = gauge || fan;   // anything to ask about right now?
+  const [why, setWhy] = useState(false);
   const [cid, setCid] = useState(startCoffeeId && items.some(i => i.coffee.id === startCoffeeId) ? startCoffeeId : null);
   // Maintain (during service): the grinder is where the last shot left it, so skip the position question
-  const afterCoffee = maintain ? (gauge ? 'room' : 'predict') : 'position';
+  const afterCoffee = maintain ? (askNow ? 'room' : 'predict') : 'position';
   const [step, setStep] = useState(cid ? afterCoffee : 'coffee');
   const [still, setStill] = useState(null);
   const [pos, setPos] = useState('');
@@ -38,7 +41,7 @@ export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, gri
       const s = num(pos); if (s === null) return setErr('Enter what the grinder reads now.');
       const de = checkDialEntry(s, M); if (de) return setErr(de);
     }
-    setErr(''); setStep(gauge ? 'room' : 'predict');
+    setErr(''); setStep(askNow ? 'room' : 'predict');
   };
 
   const r = useMemo(() => (step === 'predict' && cal ? recommend({
@@ -64,7 +67,7 @@ export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, gri
       {step === 'coffee' ? (
         <Card>
           <Text style={st.h}>{maintain ? 'WHICH COFFEE IS IN THE HOPPER?' : 'WHICH COFFEE?'}</Text>
-          <Body muted>{maintain ? `Checks whether the room or how busy ${grinder.name} is calls for a change, without pulling a shot first.` : `Coffees with a saved calibration on ${grinder.name}.`}</Body>
+          <Body muted>{maintain ? 'Pick the coffee, then tell Dial In what has changed.' : `Coffees with a saved calibration on ${grinder.name}.`}</Body>
           {items.length ? items.map(({ coffee, cal: k }) => (
             <Pressable key={coffee.id} onPress={() => pick(coffee.id)} style={st.row}>
               <View style={st.rowTop}><Text style={st.rowTitle}>{coffee.name}</Text><Text style={st.rowSet}>{k.setting}</Text></View>
@@ -72,7 +75,7 @@ export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, gri
               {coffeeLine(coffee) ? <Text style={st.small}>{coffeeLine(coffee)}</Text> : null}
             </Pressable>
           )) : <Note>No saved calibrations on this grinder yet. Dial in a coffee first; once it's saved, it appears here.</Note>}
-          {!maintain ? <Button title={items.length ? '＋ New coffee, or one not dialled in on this grinder yet' : 'Dial in a new coffee'} kind={items.length ? 'secondary' : 'primary'} onPress={onNewCoffee} /> : null}
+          {!maintain ? <Button title={items.length ? '＋ Dial in a new coffee' : 'Dial in a new coffee'} kind={items.length ? 'secondary' : 'primary'} onPress={onNewCoffee} /> : null}
           <Button title="Cancel" kind="link" onPress={onCancel} />
         </Card>
       ) : null}
@@ -81,8 +84,8 @@ export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, gri
         <Card tone="accent">
           <Text style={st.kicker}>SAVED CALIBRATION · {grinder.name.toUpperCase()}</Text>
           <Text style={st.coffee}>{item.coffee.name}</Text>
-          <Text style={st.small}>Setting {cal.setting} · {fmt(cal.dose)} g → {fmt(cal.yield)} g · {fmt(cal.time)} s{cal.doserTime != null ? ` · doser ${fmt(cal.doserTime)} s` : ''}</Text>
-          <Text style={st.small}>{cal.roomTemp != null ? `${fmt(cal.roomTemp)} °C` : 'room not measured'}{cal.humidity != null ? ` · ${fmt(cal.humidity, 0)} % RH` : ''} · saved {when(cal.ts)}{cal.imported ? ' · from your earlier shots' : ''}</Text>
+          <Text style={st.small}>Grinder {cal.setting} · {fmt(cal.dose)} g → {fmt(cal.yield)} g · {fmt(cal.time)} s{cal.doserTime != null ? ` · doser ${fmt(cal.doserTime)} s` : ''}</Text>
+          <Text style={st.small}>{cal.roomTemp != null ? `${fmt(cal.roomTemp)} °C · ` : simple ? '' : 'room not measured · '}{cal.humidity != null ? `${fmt(cal.humidity, 0)} % · ` : ''}saved {when(cal.ts)}{cal.imported ? ' · from your earlier shots' : ''}</Text>
         </Card>
       ) : null}
 
@@ -105,15 +108,15 @@ export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, gri
 
       {step === 'room' ? (
         <Card>
-          <Text style={st.h}>ROOM CONDITIONS NOW</Text>
-          <Body muted>Read your thermometer and humidity gauge. Last time: {cal.roomTemp != null ? `${fmt(cal.roomTemp)} °C` : '–'}, {cal.humidity != null ? `${fmt(cal.humidity, 0)} % RH` : '–'}. Leave a box blank if you can't measure it.</Body>
-          <View style={st.steppers}>
+          <Text style={st.h}>RIGHT NOW</Text>
+          {gauge ? <Body muted>Last time: {cal.roomTemp != null ? `${fmt(cal.roomTemp)} °C` : '–'}, {cal.humidity != null ? `${fmt(cal.humidity, 0)} %` : '–'}. Leave blank if you can't measure.</Body> : null}
+          {gauge ? <View style={st.steppers}>
             <Stepper label="ROOM" unit="°C" value={room.roomTemp} onChange={v => setRoom(p => ({ ...p, roomTemp: v }))} step={0.5} />
-            <Stepper label="HUMIDITY" unit="% RH" value={room.humidity} onChange={v => setRoom(p => ({ ...p, humidity: v }))} step={1} decimals={0} />
-          </View>
-          {rules.burr === 'fan' ? (
+            <Stepper label="HUMIDITY" unit="%" value={room.humidity} onChange={v => setRoom(p => ({ ...p, humidity: v }))} step={1} decimals={0} />
+          </View> : null}
+          {fan ? (
             <View style={{ gap: 6 }}>
-              <Label>Workload now</Label>
+              <Label>How busy is it?</Label>
               <Segmented options={LOADS} value={Number(room.workload)} onChange={v => setRoom(p => ({ ...p, workload: v }))} />
             </View>
           ) : null}
@@ -122,19 +125,31 @@ export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, gri
         </Card>
       ) : null}
 
-      {step === 'predict' && r ? (
+      {step === 'predict' && r ? (() => {
+        const redial = redialCheck(cal, { roomTemp: gauge ? room.roomTemp : null, humidity: gauge ? room.humidity : null, workload: fan ? room.workload : null }, rules);
+        return redial ? (
+          <Card tone="warn">
+            <Text style={st.h}>BIG CHANGE · DIAL IN AGAIN</Text>
+            <Body>{`Since this coffee was dialled in: ${redial}. That's too big a jump to predict safely, so dial it in again to set new settings.`}</Body>
+            <Button title="Dial in again" onPress={() => onRedial(cid, cal)} />
+            <Button title="‹ Back" kind="link" onPress={() => setStep(askNow ? 'room' : maintain ? 'coffee' : 'position')} />
+          </Card>
+        ) : (
         <Card>
-          <Text style={st.h}>{maintain ? (r.status === 'ready' && r.dial.moveShort === 'hold' ? 'NO CHANGE NEEDED' : 'ADJUSTMENT') : 'PREDICTED SETTING'}</Text>
+          <Text style={st.h}>{maintain ? (r.status === 'ready' && r.dial.moveShort === 'hold' ? 'NO CHANGE NEEDED' : 'CHANGE TO') : 'START HERE'}</Text>
           <View style={st.facts}>
-            <Fact label="VERIFIED" value={String(cal.setting)} />
             <Fact label="GRINDER NOW" value={str(current)} />
-            <Fact label="PREDICTED" value={r.status === 'ready' ? r.dial.text : '–'} strong />
+            <Fact label="SET TO" value={r.status === 'ready' ? r.dial.text : '–'} strong />
+            <Fact label="DOSER" value={r.status === 'ready' && r.dose.seconds != null ? `${fmt(r.dose.seconds)} s` : cal.doserTime != null ? `${fmt(cal.doserTime)} s` : '–'} />
           </View>
-          {!gauge ? <Note>Dial In works without room measurements. For more detailed predictions, consider a digital thermometer and humidity gauge.</Note> : null}
-          {r.status === 'ready' && !r.enoughHistory ? (
-            <Note tone="warn">{`Not enough calibration history to predict a reliable adjustment for: ${r.notApplied.join('; ')}. Dial In hasn't measured that effect on this grinder yet, so it isn't applied. Start from your verified setting and check the first extraction. Every verified calibration teaches it.`}</Note>
+          {!simple && !gauge ? <Note>Dial In works without room measurements. For more detailed predictions, consider a digital thermometer and humidity gauge.</Note> : null}
+          {r.status === 'ready' && !r.enoughHistory && !simple ? (
+            <Note tone="warn">{`Not enough history yet to adjust for: ${r.notApplied.join('; ')}. Start from your saved setting and check the first shot.`}</Note>
           ) : null}
-          <Recommendation r={r} M={M} grinder={grinder} compact />
+          {simple ? (
+            <Pressable onPress={() => setWhy(!why)} hitSlop={6}><Text style={st.why}>{why ? '▾ Hide why' : '▸ Why?'}</Text></Pressable>
+          ) : null}
+          {!simple || why ? <Recommendation r={r} M={M} grinder={grinder} compact /> : null}
           {maintain ? (
             r.status === 'ready' && r.dial.moveShort === 'hold' ? (
               <>
@@ -154,9 +169,10 @@ export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, gri
               {r.dial.moveShort !== 'hold' ? <Button title={`Start from ${str(current)} instead`} kind="secondary" onPress={() => start('current')} /> : null}
             </>
           ) : <Button title={`Start from ${str(current)}`} onPress={() => start('current')} />}
-          <Button title="‹ Back" kind="link" onPress={() => setStep(gauge ? 'room' : maintain ? 'coffee' : 'position')} />
+          <Button title="‹ Back" kind="link" onPress={() => setStep(askNow ? 'room' : maintain ? 'coffee' : 'position')} />
         </Card>
-      ) : null}
+        );
+      })() : null}
     </View>
   );
 }
@@ -174,7 +190,7 @@ const st = StyleSheet.create({
   h: { color: C.ink, fontSize: 15, fontWeight: '800', letterSpacing: 0.8 },
   kicker: { color: C.muted, fontSize: 11, fontWeight: '800', letterSpacing: 1 },
   coffee: { color: C.white, fontSize: 22, fontWeight: '800' },
-  small: { color: C.muted, fontSize: 12 },
+  small: { color: C.muted, fontSize: 13 },
   row: { borderWidth: 1, borderColor: C.line, borderRadius: R.md, padding: S.md, gap: 2, backgroundColor: C.surface2 },
   rowTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   rowTitle: { color: C.ink, fontWeight: '700', fontSize: 16 },
@@ -184,6 +200,7 @@ const st = StyleSheet.create({
   tileLabel: { color: C.muted, fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
   facts: { flexDirection: 'row', gap: S.sm },
   fact: { flex: 1, backgroundColor: C.surface2, borderRadius: R.md, padding: S.sm, alignItems: 'center', gap: 2 },
-  factVal: { color: C.white, fontSize: 20, fontWeight: '800' },
+  factVal: { color: C.white, fontSize: 24, fontWeight: '800' },
+  why: { color: C.accentBright, fontWeight: '700', fontSize: 15 },
   steppers: { flexDirection: 'row', flexWrap: 'wrap', gap: S.sm },
 });

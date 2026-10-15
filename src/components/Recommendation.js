@@ -17,7 +17,7 @@ export function Basis({ r }) {
         {!r.guided ? <Pill tone={CONF_TONE[r.confidence]}>Confidence: {r.confidence}</Pill> : null}
       </View>
       <Text style={st.basisText}>Based on: {r.sourceText}</Text>
-      {r.guided ? <Text style={st.note}>This grinder hasn't been measured on this coffee yet, so this is a fixed calibration step of 2 subdivisions, not a prediction. The next shot measures how this grinder responds.</Text>
+      {r.guided ? <Text style={st.note}>This grinder hasn't been measured on this coffee yet, so this is a fixed step of 2 notches, not a prediction. The next shot measures how this grinder responds.</Text>
         : r.dial.conservative ? <Text style={st.note}>Using a house rule until this grinder is measured.</Text> : null}
     </View>
   );
@@ -49,7 +49,7 @@ export default function Recommendation({ r, M, grinder, onChangeRules, compact }
       </Gauge>
       <Pill tone="accent">{d.moveShort === 'hold' ? `Stay on ${d.anchorText}` : `From ${d.anchorText} · ${d.moveShort}`}</Pill>
       {d.reason ? <Text style={st.reason}>{d.reason}</Text> : null}
-      {d.capped ? <Text style={[st.reason, { color: C.warn }]}>{d.conservative ? 'Capped at half a number until this grinder is measured.' : 'Capped at one notch. Pull a shot here and check before going further.'}</Text> : null}
+      {d.capped ? <Text style={[st.reason, { color: C.warn }]}>{d.conservative ? 'Capped at half a number until this grinder is measured.' : 'Capped at one number. Pull a shot here and check before going further.'}</Text> : null}
       <Basis r={r} />
 
       <View style={st.doseTile}>
@@ -66,7 +66,7 @@ export default function Recommendation({ r, M, grinder, onChangeRules, compact }
           <Text style={st.tileSub}>{r.predictedTime == null ? 'not predicted yet' : d.range ? `± ${d.range}` : 'at the new setting'}</Text>
         </View>
         <View style={st.tile}>
-          <Text style={st.tileLabel}>PER SUBDIVISION</Text>
+          <Text style={st.tileLabel}>PER NOTCH</Text>
           <Text style={st.tileValue}>{r.secondsPerMark != null ? `${fmt(r.secondsPerMark)} s` : '–'}</Text>
           <Text style={st.tileSub}>{r.secondsPerMark == null ? 'measured from the next shot' : r.slopeSource === 'benchmark' ? 'house rule' : r.slopeSource === 'grinder' ? 'measured on other coffees' : 'measured'}</Text>
         </View>

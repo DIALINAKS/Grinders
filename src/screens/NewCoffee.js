@@ -66,12 +66,10 @@ export default function NewCoffee({ grinder, coffees, onCreateCoffee, onStart, o
       {step === 1 ? (
         <Card>
           <Text style={st.h}>CONFIRM YOUR DOSE</Text>
-          <Body>Before adjusting your grinder, ensure your dose is consistent. We recommend starting with 18 g and keeping this weight unchanged throughout calibration.</Body>
+          <Body>The dose stays the same for the whole dial-in. 18 g is a good start.</Body>
           <View style={st.steppers}>
             <Stepper label="DOSE" unit="g" value={f.dose} onChange={set('dose')} step={0.1} />
-            <Stepper label="TOLERANCE ±" unit="g" value={f.tol} onChange={set('tol')} step={0.1} />
-          </View>
-          <Body muted style={{ fontSize: 12 }}>The dose stays fixed for the whole calibration. If you change it, calibration starts again, because a change in both dose and grind makes it impossible to tell which one moved the time. You'll be warned when a weighed dose is outside the tolerance.</Body>
+                      </View>
           <Button title="Next: targets" onPress={() => setStep(2)} />
           <Button title="‹ Back" kind="link" onPress={() => setStep(0)} />
         </Card>
@@ -80,14 +78,14 @@ export default function NewCoffee({ grinder, coffees, onCreateCoffee, onStart, o
       {step === 2 ? (
         <Card>
           <Text style={st.h}>SET YOUR TARGETS</Text>
-          <Body muted>{chosen ? chosen.name + ' · ' : ''}Starting points you can change for any coffee.</Body>
+          <Body muted>{chosen ? chosen.name + ' · ' : ''}Change these if your recipe is different.</Body>
           <View style={st.steppers}>
             <Stepper label="YIELD" unit="g" value={f.yield} onChange={set('yield')} step={0.1} />
             <Stepper label="TIME FROM" unit="s" value={f.tLo} onChange={set('tLo')} step={1} decimals={0} />
             <Stepper label="TIME TO" unit="s" value={f.tHi} onChange={set('tHi')} step={1} decimals={0} />
           </View>
           <Body>Target: {fmt(num(f.dose))} g in → {fmt(num(f.yield))} g out (1:{fmt(num(f.yield) / num(f.dose))}) in {fmt(num(f.tLo), 0)}–{fmt(num(f.tHi), 0)} s.</Body>
-          <Body muted style={{ fontSize: 12 }}>Time every shot from the same point, ideally when the pump starts. Extraction time is the calibration guide; taste decides the final recipe.</Body>
+          <Body muted style={{ fontSize: 13 }}>Time every shot from when the pump starts.</Body>
           {err ? <Text style={{ color: C.bad }}>{err}</Text> : null}
           <Button title="Start dialling in" onPress={start} />
           <Button title="‹ Back" kind="link" onPress={() => setStep(1)} />

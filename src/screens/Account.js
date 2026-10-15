@@ -4,7 +4,7 @@ import { C, S, R } from '../theme';
 import { Card, H2, Label, Body, Segmented, Button } from '../components/ui';
 import { TIERS, tierOf, activeGrinders, priceText } from '../engine';
 
-export default function Account({ tier, bill, grinders: allG, shots: allS, onBill, onTier, onBack, hasSample, onRemoveSample }) {
+export default function Account({ detail, onDetail, tier, bill, grinders: allG, shots: allS, onBill, onTier, onBack, hasSample, onRemoveSample }) {
   const grinders = allG.filter(g => !g.sample), shots = allS.filter(s => !s.sample);
   const t = tierOf(tier), act = activeGrinders(grinders).length, arch = grinders.length - act;
   const money = v => '£' + v.toFixed(2);
@@ -17,6 +17,14 @@ export default function Account({ tier, bill, grinders: allG, shots: allS, onBil
           <Stat label="Grinders" value={`${act} active${t.grinders !== Infinity ? ` of ${t.grinders}` : ''}${arch ? ` · ${arch} archived` : ''}`} />
           <Stat label="Saved shots" value={t.shots !== Infinity ? `${shots.length} / ${t.shots}` : String(shots.length)} />
         </View>
+      </Card>
+
+      <Card>
+        <Label>What the app asks for</Label>
+        <Segmented options={[{ value: false, label: 'Simple' }, { value: true, label: 'More detail' }]} value={!!detail} onChange={onDetail} />
+        <Body muted>{detail
+          ? 'Also asks for room temperature, humidity and taste, and shows charts. Best for home use, or once your team is confident.'
+          : 'Asks only for the shot time. Best for new baristas and busy service.'}</Body>
       </Card>
 
       <Card style={{ borderStyle: 'dashed', borderColor: C.accent }}>

@@ -1,6 +1,6 @@
 // Run with: npm test   (node tests/engine.test.mjs)
 // Checks the Dial In calibration engine (v2).
-import { checkShot, stepResponse, doserFor, recommend, rulesFor, fromDial, fmtDial, checkDialEntry, reconcileGrinders, usageText, insights } from '../src/engine/index.js';
+import { checkShot, stepResponse, doserFor, recommend, rulesFor, fromDial, fmtDial, checkDialEntry, reconcileGrinders, usageText, insights, redialCheck } from '../src/engine/index.js';
 import assert from 'node:assert/strict';
 
 const mazzer = rulesFor({ model: 'Mazzer' });          // 10 subdivisions, finer = lower number, no house rules
@@ -65,7 +65,7 @@ t('house rule on: temperature changes, humidity does not (1 number per 4 °C)', 
   const r = recommend({ shots: prior, rules: house, now: { ...now0, roomTemp: 23, humidity: 50 }, anchor: { kind: 'calibration', cal, current: 4.0 } });
   const row = envRow(r, 'Room temperature');
   assert.ok(row && /finer/.test(row.move));
-  assert.equal(row.move, '7½ subdivisions finer');       // 3 °C ÷ 4 °C per number = ¾ number
+  assert.equal(row.move, '7½ notches finer');       // 3 °C ÷ 4 °C per number = ¾ number
   assert.equal(row.status, 'house rule');
   assert.ok(!envRow(r, 'Humidity'));
   assert.equal(r.confidence, 'Low');           // house rules never earn more than Low
@@ -75,7 +75,7 @@ t('house rule on: temperature changes, humidity does not (1 number per 4 °C)', 
 t('house rule on: humidity changes, temperature does not (12 % RH = 1 °C)', () => {
   const r = recommend({ shots: prior, rules: house, now: { ...now0, roomTemp: 20, humidity: 74 }, anchor: { kind: 'calibration', cal, current: 4.0 } });
   assert.ok(!envRow(r, 'Room temperature'));
-  assert.equal(envRow(r, 'Humidity').move, '5 subdivisions finer'); // +24 % RH ≈ 2 °C ≈ ½ number
+  assert.equal(envRow(r, 'Humidity').move, '5 notches finer'); // +24 % RH ≈ 2 °C ≈ ½ number
 });
 
 t('house rule on: both change, the two effects add', () => {
@@ -196,6 +196,15 @@ t('membership', () => {
   assert.deepEqual(reconcileGrinders('business', [{ id: 'a' }, { id: 'b', archived: true }]), { mustChoose: false, restore: ['b'] });
   assert.equal(usageText('free', [{ id: 'a' }], Array.from({ length: 12 }, (_, i) => ({ id: 's' + i }))), 'Shots used: 12 / 20');
   assert.equal(usageText('free', [{ id: 'a' }], [{ id: 'x', sample: true }, { id: 'y' }]), 'Shots used: 1 / 20');
+});
+
+t('big shifts ask for a re-dial, small ones do not', () => {
+  const cal = { roomTemp: 20, humidity: 50, workload: 0 };
+  assert.equal(redialCheck(cal, { roomTemp: 22, humidity: 55, workload: 1 }, rulesFor({ model: 'Compak E6' })), null);
+  assert.ok(/room/.test(redialCheck(cal, { roomTemp: 25 }, mazzer)));
+  assert.ok(/busy/.test(redialCheck(cal, { workload: 2 }, rulesFor({ model: 'Compak E6' }))));
+  assert.equal(redialCheck(cal, { workload: 2 }, mythos), null);           // temperature-controlled burrs ignore workload
+  assert.equal(redialCheck({ roomTemp: null }, { roomTemp: 30 }, mazzer), null); // never compares a missing reading
 });
 
 console.log(`All ${passed} engine tests passed.`);

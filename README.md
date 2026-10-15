@@ -16,6 +16,15 @@ This is the React Native / Expo version of Dial In. It runs on iPhone and Androi
 - **History** (with predicted vs actual), **Insights** (what moves your shot, benchmark vs measured, prediction accuracy) and **Account** tabs.
 - **Data from the first build carries over:** typed coffee names become coffee profiles, and the latest in-band shot for each grinder + coffee becomes its saved calibration.
 
+## Simple mode and the one-screen shot loop
+
+- **Simple mode is the default.** The barista only enters the shot time (plus Quiet / Steady / Busy on fan-cooled grinders like the Compak E6). Switch to **More detail** in Account for room temperature, humidity, taste and charts.
+- **One screen per dial-in:** *Last shot* (grinder, doser, time) → *Change to* (new grinder setting and doser time) → *This shot* (enter the time, record). The barista taps **Done, I've set it** instead of retyping the numbers, or **I set something else** to enter their own.
+- **Dose only when it's wrong:** tap *Dose wasn't 18 g?*, enter what it weighed, top up or take out, and Dial In corrects the doser time for next time.
+- **Re-dial on big changes:** in Maintain, a jump of 4 °C or more, 15 % humidity or more, or quiet → busy on a fan-cooled grinder asks the barista to dial in again rather than guess.
+- **One word for the dial:** "number" for the printed numbers, "notch" for the steps between them.
+- Changing the dose and archiving a coffee both ask for confirmation.
+
 ## The calculation engine (`src/engine/index.js`)
 
 - **Grind response k** (extraction seconds per number) is fitted from that grinder's shots for the coffee. Before it is measured, the app borrows it from the grinder's other coffees, else uses the 10 s benchmark with a cautious half step (max ½ a number).
