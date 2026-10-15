@@ -26,24 +26,19 @@ export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, gri
   // Always confirm where the grinder is: during service a barista may have moved it without logging a shot
   const afterCoffee = 'position';
   const [step, setStep] = useState(cid ? afterCoffee : 'coffee');
-  const [still, setStill] = useState(null);
   const [pos, setPos] = useState('');
   const [room, setRoom] = useState({ roomTemp: '', humidity: '', workload: 1 });
   const [err, setErr] = useState('');
   const item = items.find(i => i.coffee.id === cid);
   const cal = item && item.cal;
-  // where Dial In last knew the grinder to be: the last logged setting in service, the saved calibration otherwise
-  const known = maintain ? (num(grinder.lastSetting) ?? (cal ? num(cal.setting) : null)) : cal ? num(cal.setting) : null;
-  const current = still === false ? num(pos) : known;
+  // the barista reads the dial and types it: no assumed position, so a moved grinder is always caught
+  const current = num(pos);
 
-  const pick = id => { setCid(id); setStill(null); setPos(''); setErr(''); setStep(afterCoffee); };
+  const pick = id => { setCid(id); setPos(''); setErr(''); setStep(afterCoffee); };
   const confirmPos = () => {
-    if (still === null) return setErr('Tell us where the grinder is now.');
-    if (still === false) {
-      const s = num(pos); if (s === null) return setErr('Enter what the grinder reads now.');
-      const de = checkDialEntry(s, M); if (de) return setErr(de);
-      if (onSetPosition) onSetPosition(s); // remember the grinder's real position
-    }
+    const s = num(pos); if (s === null) return setErr('Enter what the grinder reads now.');
+    const de = checkDialEntry(s, M); if (de) return setErr(de);
+    if (onSetPosition) onSetPosition(s); // remember the grinder's real position
     setErr(''); setStep(askNow ? 'room' : 'predict');
   };
 
@@ -95,15 +90,12 @@ export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, gri
 
       {step === 'position' ? (
         <Card>
-          <Text style={st.h}>IS YOUR GRINDER STILL ON {str(known)}?</Text>
-          <Body muted>{maintain ? 'Changed it without recording a shot? Enter what it reads now.' : 'Someone may have moved it since.'}</Body>
-          <Segmented options={[{ value: true, label: `Yes, ${str(known)}` }, { value: false, label: 'No, enter setting' }]} value={still} onChange={v => { setStill(v); setErr(''); }} />
-          {still === false ? (
-            <View style={st.bigField}>
-              <Text style={st.tileLabel}>GRINDER READS NOW</Text>
-              <TextInput value={pos} onChangeText={setPos} keyboardType="decimal-pad" placeholder={str(known)} placeholderTextColor={C.faint} style={st.bigInput} />
-            </View>
-          ) : null}
+          <Text style={st.h}>WHAT DOES YOUR GRINDER READ NOW?</Text>
+          <View style={st.bigField}>
+            <Text style={st.tileLabel}>GRINDER READS</Text>
+            <TextInput value={pos} onChangeText={v => { setPos(v); setErr(''); }} keyboardType="decimal-pad" placeholder="–" placeholderTextColor={C.faint}
+              style={st.bigInput} autoFocus accessibilityLabel="Grinder setting now" />
+          </View>
           {err ? <Text style={{ color: C.bad }}>{err}</Text> : null}
           <Button title="Next" onPress={confirmPos} />
           <Button title="‹ Choose another coffee" kind="link" onPress={() => setStep('coffee')} />
