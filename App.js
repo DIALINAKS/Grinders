@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, Image, ScrollView, Pressable, SafeAreaView, StatusBar, Platform, KeyboardAvoidingView, StyleSheet } from 'react-native';
 import { C, S, R } from './src/theme';
 import { load, save } from './src/store';
-import { newId, epochShots, activeCal, grinderCoffees, coffeeById, saveCalibration, recalibrate, withSample, withoutSample } from './src/model';
+import { newId, epochShots, activeCal, grinderCoffees, coffeeById, saveCalibration, saveCalibrationFromShot, unsavedInBand, recalibrate, withSample, withoutSample } from './src/model';
 import { Chips, Label, Card, Body, Button } from './src/components/ui';
 import { Icon } from './src/components/visuals';
 import { tierOf, usageText, activeGrinders, reconcileGrinders, shotLimitReached, fmt } from './src/engine';
@@ -115,7 +115,8 @@ export default function App() {
         <Pressable onPress={() => setOverlay(null)}><Text style={st_.back}>‹ Back</Text></Pressable>
         <Rules grinder={grinder} onChange={changeRules} readOnly={grinder.archived}
           onGauge={v => setGrinder(grinder.id, { gauge: v })}
-          onRecalibrate={reason => { update(s => recalibrate(s, grinder.id, reason)); setFlow(null); setOverlay(null); }} />
+          onRecalibrate={reason => { update(s => recalibrate(s, grinder.id, reason)); setFlow(null); setOverlay(null); }}
+          onUndoRecalibrate={() => setGrinder(grinder.id, { epochStart: null, epochReason: null })} />
       </View>
     );
   } else if (tab === 'home') {
@@ -129,8 +130,9 @@ export default function App() {
         onStart={r => startRun(r, null)} onCancel={() => setFlow(null)} />;
     } else if (flow && flow.kind === 'adjust') {
       body = <Adjust grinder={grinder} items={items} startCoffeeId={flow.coffeeId} coffeeShots={coffeeShots} grinderShots={epoch}
-        maintain={!!flow.maintain} simple={simple} onStart={startRun}
-        onRedial={(cid, cal) => setFlow({ kind: 'new', preset: { coffeeId: cid, dose: cal.dose, yield: cal.yield } })} onCancel={() => setFlow(null)} onNewCoffee={() => setFlow({ kind: 'new' })} />;
+        maintain={!!flow.maintain} simple={simple} onStart={startRun} onCancel={() => setFlow(null)} onNewCoffee={() => setFlow({ kind: 'new' })}
+        onRedial={(cid, cal) => setFlow({ kind: 'new', preset: { coffeeId: cid, dose: cal.dose, yield: cal.yield } })}
+        onSetPosition={s => setGrinder(grinder.id, { lastSetting: s })} />;
     } else if (flow && flow.kind === 'saved') {
       const c = coffeeById(st, flow.coffeeId), k = activeCal(st, grinder, flow.coffeeId);
       body = (
@@ -146,7 +148,19 @@ export default function App() {
         onNew={() => setFlow({ kind: 'new' })} onAdjust={cid => setFlow({ kind: 'adjust', coffeeId: cid })} onContinue={() => setFlow({ kind: 'loop' })}
         onMaintain={cid => setFlow({ kind: 'adjust', coffeeId: cid, maintain: true })}
         onGauge={v => setGrinder(grinder.id, { gauge: v })}
-        onArchiveCoffee={id => update(s => ({ ...s, coffees: s.coffees.map(c => (c.id === id ? { ...c, archived: true } : c)) }))} />;
+        onArchiveCoffee={id => update(s => ({ ...s, coffees: s.coffees.map(c => (c.id === id ? { ...c, archived: true } : c)) }))}
+        unsaved={!run ? unsavedInBand(st, grinder) : null} unsavedCoffee={(() => { const u = !run ? unsavedInBand(st, grinder) : null; return u ? coffeeById(st, u.coffeeId) : null; })()}
+        hiddenCal={(() => {
+          if (items.length) return null;
+          const mine = st.calibrations.filter(k => k.active && k.grinderId === grinder.id);
+          const arch = mine.map(k => coffeeById(st, k.coffeeId)).find(c => c && c.archived);
+          if (arch) return { kind: 'archived', coffee: arch };
+          if (grinder.epochStart && mine.some(k => k.ts < grinder.epochStart)) return { kind: 'epoch', when: grinder.epochStart, reason: grinder.epochReason };
+          return null;
+        })()}
+        onRestoreCoffee={id => update(s => ({ ...s, coffees: s.coffees.map(c => (c.id === id ? { ...c, archived: false } : c)) }))}
+        onUndoRecalibrate={() => setGrinder(grinder.id, { epochStart: null, epochReason: null })}
+        onSaveUnsaved={shot => { update(s => saveCalibrationFromShot(s, shot)); setFlow({ kind: 'saved', coffeeId: shot.coffeeId }); }} />;
     }
   } else if (tab === 'history') {
     body = <History shots={viewCoffee ? st.shots.filter(s => s.grinderId === grinder.id && s.coffeeId === viewCoffee.id).sort((a, b) => (a.ts < b.ts ? -1 : 1)) : []}

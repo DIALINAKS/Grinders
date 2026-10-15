@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, Pressable, Alert, Platform, StyleSheet } from 'react-native';
 import { C, S, R } from '../theme';
 import { Card, H2, Body } from '../components/ui';
-import { fmt } from '../engine';
+import { fmt, fmtSec } from '../engine';
 
 const LOADS = ['Quiet', 'Steady', 'Busy'];
 const TASTE_COLOR = { sour: C.warn, balanced: C.good, bitter: C.bad };
@@ -33,7 +33,7 @@ export default function History({ shots, epochStart, onDelete, onToggleExclude, 
             </View>
           </View>
           {s.kind === 'dose' ? (
-            <Text style={st.main}>Dial <Text style={st.b}>{s.setting}</Text> · grinder dropped {fmt(s.ground)} g in {fmt(s.doserTime)} s</Text>
+            <Text style={st.main}>Dial <Text style={st.b}>{s.setting}</Text> · grinder dropped {fmt(s.ground)} g in {fmtSec(s.doserTime)} s</Text>
           ) : (
             <Text style={st.main}>
               Dial <Text style={st.b}>{s.setting}</Text> · {fmt(s.time)} s · {fmt(s.dose)} g → {fmt(s.yield)} g
@@ -50,7 +50,7 @@ export default function History({ shots, epochStart, onDelete, onToggleExclude, 
           {s.ground != null && Math.abs(s.ground - s.dose) > 1e-6 ? <Text style={st.sub}>Grinder dropped {fmt(s.ground)} g{s.toppedUp ? `, topped up to ${fmt(s.dose)} g` : ''}</Text> : null}
           {s.predTime != null ? <Text style={st.sub}>Predicted {fmt(s.predTime)} s · off by {fmt(Math.abs(s.time - s.predTime))} s</Text> : null}
           <Text style={st.sub}>
-            Doser {s.doserTime != null ? fmt(s.doserTime) + ' s' : '–'} · Room {s.roomTemp != null ? fmt(s.roomTemp) + ' °C' : '–'} · {s.humidity != null ? fmt(s.humidity, 0) + '%' : '–'} RH{s.workload != null ? ' · ' + LOADS[s.workload] : ''}
+            Doser {s.doserTime != null ? fmtSec(s.doserTime) + ' s' : '–'} · Room {s.roomTemp != null ? fmt(s.roomTemp) + ' °C' : '–'} · {s.humidity != null ? fmt(s.humidity, 0) + '%' : '–'} RH{s.workload != null ? ' · ' + LOADS[s.workload] : ''}
           </Text>
           {epochStart && s.ts < epochStart ? <Text style={st.sub}>Before the grinder was recalibrated · not used</Text> : null}
           {s.notes ? <Text style={st.sub}>{s.notes}</Text> : null}

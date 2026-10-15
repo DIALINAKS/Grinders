@@ -4,7 +4,7 @@ import { C, S, R } from '../theme';
 import { Card, Label, Segmented, Note, Button } from '../components/ui';
 import { ShotsChart, Stepper, Pill } from '../components/visuals';
 import Recommendation from '../components/Recommendation';
-import { recommend, rulesFor, dialMarks, checkDialEntry, fmt, num, checkShot, stepResponse } from '../engine';
+import { recommend, rulesFor, dialMarks, checkDialEntry, fmt, num, checkShot, stepResponse, doserFor, dropped, doserStepOf, doserDecimals, fmtDoser } from '../engine';
 
 const LOADS = [{ value: 0, label: 'Quiet' }, { value: 1, label: 'Steady' }, { value: 2, label: 'Busy' }];
 const TASTES = [{ value: 'sour', label: 'Sour' }, { value: 'balanced', label: 'Balanced' }, { value: 'bitter', label: 'Bitter' }];
@@ -35,10 +35,14 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
     anchor: { kind: 'shot', setting: last.setting, time: last.time },
   }) : null), [coffeeShots.length, grinderShots.length, grinder, run.id, last && last.excluded, gauge]);
   const ready = !!(r && r.status === 'ready' && last && !last.excluded);
+  const dDec = doserDecimals(rules), fd = v => fmtDoser(v, rules);
+  // the most recent weighed drop in this run: the doser always follows it, even with no grind recommendation yet
+  const lastDrop = [...allRunRows].reverse().find(x => dropped(x) !== null && num(x.doserTime) > 0);
+  const dropFix = lastDrop ? doserFor(run.dose, dropped(lastDrop), num(lastDrop.doserTime), rules) : null;
 
   const fresh = () => ({
     setting: ready ? r.dial.entry : last ? str(last.setting) : str(first ? first.setting : grinder.lastSetting),
-    doserTime: ready && r.dose.seconds != null ? r.dose.seconds.toFixed(1) : last ? str(last.doserTime) : str(first ? first.doserTime : ''),
+    doserTime: ready && r.dose.seconds != null ? r.dose.seconds.toFixed(dDec) : dropFix ? dropFix.seconds.toFixed(dDec) : last ? str(last.doserTime) : str(first ? first.doserTime : ''),
     doseWrong: false, ground: str(run.dose), time: '', taste: '',
     roomTemp: str(last ? last.roomTemp : first ? first.roomTemp : ''), humidity: str(last ? last.humidity : first ? first.humidity : ''),
     workload: last ? (last.workload ?? 1) : first && first.workload != null ? first.workload : 1,
@@ -69,9 +73,14 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
     const de = checkDialEntry(s, M); if (de) return setErr(de);
     if (f.doseWrong && groundG === null) return setErr('Enter what the dose weighed.');
     if (num(f.time) === null) return setErr('Enter the shot time.');
+    // with a gauge (detail mode), the room is part of every result: it's how the app learns this grinder
+    if (gauge && (num(f.roomTemp) === null || num(f.humidity) === null)) return setErr('Enter the room temperature and humidity.');
     setErr('');
     // remember what the app predicted, so its accuracy can be checked later
-    let recSetting = null, predTime = null;
+    let recSetting = null, predTime = null, recommended = null;
+    // what the app recommended for this shot, followed or not
+    if (ready && !inBand) recommended = num(r.dial.entry);
+    else if (!last && first && first.recEntry != null) recommended = num(first.recEntry);
     if (ready && r.predictedTime != null && Math.abs(num(r.dial.entry) - s) < 1e-6) { recSetting = num(r.dial.entry); predTime = Math.round(r.predictedTime * 10) / 10; }
     else if (!last && first && first.predTime != null && Math.abs(num(first.setting) - s) < 1e-6) { recSetting = num(first.setting); predTime = first.predTime; }
     // a wrong drop is topped up or taken out to the run dose, so the shot stays a clean grind reading;
@@ -81,6 +90,7 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
       roomTemp: gauge ? num(f.roomTemp) : null, humidity: gauge ? num(f.humidity) : null,
       workload: fan ? Number(f.workload) : null, taste: simple ? '' : f.taste,
       target: mid, targetLo: run.tLo, targetHi: run.tHi, recSetting, predTime, doseOff: false, role: 'test',
+      recommended, followed: recommended === null ? null : Math.abs(recommended - s) < 1e-6,
     };
     const prevValid = [...runShots].reverse().find(x => !x.excluded);
     Object.assign(shot, stepResponse(shot, prevValid, rules) || {});
@@ -108,7 +118,7 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
           </View>
           <View style={st.trio}>
             <Mini label="GRINDER" value={str(last.setting)} />
-            <Mini label="DOSER" value={last.doserTime != null ? `${fmt(last.doserTime)} s` : '–'} />
+            <Mini label="DOSER" value={last.doserTime != null ? `${fd(last.doserTime)} s` : '–'} />
             <Mini label="TIME" value={`${fmt(last.time)} s`} />
           </View>
           {last.excluded ? (
@@ -136,8 +146,8 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
           <Text style={st.h}>CHANGE TO</Text>
           <View style={st.duo}>
             <Big label="GRINDER" value={r.dial.text} sub={r.dial.moveShort === 'hold' ? 'no change' : r.dial.moveShort} />
-            <Big label="DOSER" value={r.dose.seconds != null ? `${fmt(r.dose.seconds)} s` : '–'}
-              sub={r.dose.seconds == null ? 'enter it below' : r.dose.change ? `${r.dose.change > 0 ? '+' : '−'}${fmt(Math.abs(r.dose.change))} s` : 'no change'} />
+            <Big label="DOSER" value={r.dose.seconds != null ? `${fd(r.dose.seconds)} s` : '–'}
+              sub={r.dose.seconds == null ? 'enter it below' : r.dose.change ? `${r.dose.change > 0 ? '+' : '−'}${fd(Math.abs(r.dose.change))} s` : 'no change'} />
           </View>
           {!confirmed && !custom ? (
             <>
@@ -250,7 +260,7 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
           <Text style={st.h}>THIS RUN</Text>
           {runShots.map((s, i) => (
             <View key={s.id} style={st.runRow}>
-              <Text style={st.runText}>{i + 1}. Grinder {s.setting}{s.doserTime != null ? ` · doser ${fmt(s.doserTime)} s` : ''}</Text>
+              <Text style={st.runText}>{i + 1}. Grinder {s.setting}{s.doserTime != null ? ` · doser ${fd(s.doserTime)} s` : ''}</Text>
               <Text style={[st.runText, { color: verdict(s) === 'in range' ? C.good : C.warn }]}>{fmt(s.time)} s</Text>
             </View>
           ))}

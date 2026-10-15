@@ -10,10 +10,16 @@
     "test": "node tests/engine.test.mjs"
   },
   "dependencies": {
-    "expo": "~57.0.17",
-    "react": "^19.2.3",
-    "react-native": "0.86.3",
+    "@expo/metro-runtime": "~57.0.17",
     "@react-native-async-storage/async-storage": "2.2.0",
-    "react-native-svg": "15.15.3"
+    "expo": "~57.0.30",
+    "react": "^19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-svg": "15.15.4",
+    "react-native-web": "^0.21.2"
+  },
+  "devDependencies": {
+    "@expo/ngrok": "^4.1.0"
   }
 }

@@ -5,7 +5,7 @@ import { Card, Button, Body, Note, Label, Segmented } from '../components/ui';
 import { Stepper } from '../components/visuals';
 import Recommendation from '../components/Recommendation';
 import { coffeeLine } from '../components/CoffeeForm';
-import { recommend, rulesFor, dialMarks, checkDialEntry, fmt, num, redialCheck } from '../engine';
+import { recommend, rulesFor, dialMarks, checkDialEntry, fmt, fmtSec, num, redialCheck } from '../engine';
 
 const LOADS = [{ value: 0, label: 'Quiet' }, { value: 1, label: 'Steady' }, { value: 2, label: 'Busy' }];
 const str = v => (v == null || v === '' ? '' : String(v));
@@ -15,7 +15,7 @@ const when = ts => new Date(ts).toLocaleDateString(undefined, { day: 'numeric', 
  * Mode 2 · Adjust an existing coffee. Uses the coffee's saved calibration on THIS grinder,
  * the grinder's confirmed position and today's room to predict the setting before the first shot.
  */
-export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, grinderShots, maintain, simple, onStart, onCancel, onNewCoffee, onRedial }) {
+export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, grinderShots, maintain, simple, onStart, onCancel, onNewCoffee, onRedial, onSetPosition }) {
   const rules = rulesFor(grinder);
   const M = dialMarks(rules);
   const gauge = !simple && grinder.gauge === true;
@@ -23,8 +23,8 @@ export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, gri
   const askNow = gauge || fan;   // anything to ask about right now?
   const [why, setWhy] = useState(false);
   const [cid, setCid] = useState(startCoffeeId && items.some(i => i.coffee.id === startCoffeeId) ? startCoffeeId : null);
-  // Maintain (during service): the grinder is where the last shot left it, so skip the position question
-  const afterCoffee = maintain ? (askNow ? 'room' : 'predict') : 'position';
+  // Always confirm where the grinder is: during service a barista may have moved it without logging a shot
+  const afterCoffee = 'position';
   const [step, setStep] = useState(cid ? afterCoffee : 'coffee');
   const [still, setStill] = useState(null);
   const [pos, setPos] = useState('');
@@ -32,7 +32,9 @@ export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, gri
   const [err, setErr] = useState('');
   const item = items.find(i => i.coffee.id === cid);
   const cal = item && item.cal;
-  const current = maintain ? (num(grinder.lastSetting) ?? (cal ? num(cal.setting) : null)) : still === false ? num(pos) : cal ? num(cal.setting) : null;
+  // where Dial In last knew the grinder to be: the last logged setting in service, the saved calibration otherwise
+  const known = maintain ? (num(grinder.lastSetting) ?? (cal ? num(cal.setting) : null)) : cal ? num(cal.setting) : null;
+  const current = still === false ? num(pos) : known;
 
   const pick = id => { setCid(id); setStill(null); setPos(''); setErr(''); setStep(afterCoffee); };
   const confirmPos = () => {
@@ -40,6 +42,7 @@ export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, gri
     if (still === false) {
       const s = num(pos); if (s === null) return setErr('Enter what the grinder reads now.');
       const de = checkDialEntry(s, M); if (de) return setErr(de);
+      if (onSetPosition) onSetPosition(s); // remember the grinder's real position
     }
     setErr(''); setStep(askNow ? 'room' : 'predict');
   };
@@ -57,6 +60,7 @@ export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, gri
     onStart(run, {
       setting: usePred ? r.dial.entry : String(current),
       doserTime: usePred && r.dose.seconds != null ? r.dose.seconds : cal.doserTime,
+      recEntry: r && r.status === 'ready' ? num(r.dial.entry) : null, // what was recommended, to tell later whether it was followed
       predTime: usePred ? Math.round(r.predictedTime * 10) / 10 : (r && r.status === 'ready' ? Math.round(r.ifUnchanged * 10) / 10 : null),
       roomTemp: room.roomTemp, humidity: room.humidity, workload: room.workload,
     });
@@ -84,20 +88,20 @@ export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, gri
         <Card tone="accent">
           <Text style={st.kicker}>SAVED CALIBRATION · {grinder.name.toUpperCase()}</Text>
           <Text style={st.coffee}>{item.coffee.name}</Text>
-          <Text style={st.small}>Grinder {cal.setting} · {fmt(cal.dose)} g → {fmt(cal.yield)} g · {fmt(cal.time)} s{cal.doserTime != null ? ` · doser ${fmt(cal.doserTime)} s` : ''}</Text>
+          <Text style={st.small}>Grinder {cal.setting} · {fmt(cal.dose)} g → {fmt(cal.yield)} g · {fmt(cal.time)} s{cal.doserTime != null ? ` · doser ${fmtSec(cal.doserTime)} s` : ''}</Text>
           <Text style={st.small}>{cal.roomTemp != null ? `${fmt(cal.roomTemp)} °C · ` : simple ? '' : 'room not measured · '}{cal.humidity != null ? `${fmt(cal.humidity, 0)} % · ` : ''}saved {when(cal.ts)}{cal.imported ? ' · from your earlier shots' : ''}</Text>
         </Card>
       ) : null}
 
       {step === 'position' ? (
         <Card>
-          <Text style={st.h}>IS YOUR GRINDER STILL AT {cal.setting}?</Text>
-          <Body muted>Someone may have moved it since. The prediction starts from where it is now.</Body>
-          <Segmented options={[{ value: true, label: `Yes, it's on ${cal.setting}` }, { value: false, label: 'No, enter setting' }]} value={still} onChange={v => { setStill(v); setErr(''); }} />
+          <Text style={st.h}>IS YOUR GRINDER STILL ON {str(known)}?</Text>
+          <Body muted>{maintain ? 'Changed it without recording a shot? Enter what it reads now.' : 'Someone may have moved it since.'}</Body>
+          <Segmented options={[{ value: true, label: `Yes, ${str(known)}` }, { value: false, label: 'No, enter setting' }]} value={still} onChange={v => { setStill(v); setErr(''); }} />
           {still === false ? (
             <View style={st.bigField}>
               <Text style={st.tileLabel}>GRINDER READS NOW</Text>
-              <TextInput value={pos} onChangeText={setPos} keyboardType="decimal-pad" placeholder={String(cal.setting)} placeholderTextColor={C.faint} style={st.bigInput} />
+              <TextInput value={pos} onChangeText={setPos} keyboardType="decimal-pad" placeholder={str(known)} placeholderTextColor={C.faint} style={st.bigInput} />
             </View>
           ) : null}
           {err ? <Text style={{ color: C.bad }}>{err}</Text> : null}
@@ -120,8 +124,12 @@ export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, gri
               <Segmented options={LOADS} value={Number(room.workload)} onChange={v => setRoom(p => ({ ...p, workload: v }))} />
             </View>
           ) : null}
-          <Button title={maintain ? 'Check' : 'Predict my setting'} onPress={() => setStep('predict')} />
-          <Button title="‹ Back" kind="link" onPress={() => setStep(maintain ? 'coffee' : 'position')} />
+          {err ? <Text style={{ color: C.bad }}>{err}</Text> : null}
+          <Button title={maintain ? 'Check' : 'Predict my setting'} onPress={() => {
+            if (gauge && (num(room.roomTemp) === null || num(room.humidity) === null)) return setErr('Enter the room temperature and humidity.');
+            setErr(''); setStep('predict');
+          }} />
+          <Button title="‹ Back" kind="link" onPress={() => setStep('position')} />
         </Card>
       ) : null}
 
@@ -132,7 +140,7 @@ export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, gri
             <Text style={st.h}>BIG CHANGE · DIAL IN AGAIN</Text>
             <Body>{`Since this coffee was dialled in: ${redial}. That's too big a jump to predict safely, so dial it in again to set new settings.`}</Body>
             <Button title="Dial in again" onPress={() => onRedial(cid, cal)} />
-            <Button title="‹ Back" kind="link" onPress={() => setStep(askNow ? 'room' : maintain ? 'coffee' : 'position')} />
+            <Button title="‹ Back" kind="link" onPress={() => setStep(askNow ? 'room' : 'position')} />
           </Card>
         ) : (
         <Card>
@@ -144,7 +152,7 @@ export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, gri
           </View>
           {!simple && !gauge ? <Note>Dial In works without room measurements. For more detailed predictions, consider a digital thermometer and humidity gauge.</Note> : null}
           {r.status === 'ready' && !r.enoughHistory && !simple ? (
-            <Note tone="warn">{`Not enough history yet to adjust for: ${r.notApplied.join('; ')}. Start from your saved setting and check the first shot.`}</Note>
+            <Note tone="warn">{`Still learning how ${r.uncertain.join('; ')} affects this grinder. Pull a check shot to confirm.`}</Note>
           ) : null}
           {simple ? (
             <Pressable onPress={() => setWhy(!why)} hitSlop={6}><Text style={st.why}>{why ? '▾ Hide why' : '▸ Why?'}</Text></Pressable>
@@ -160,7 +168,7 @@ export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, gri
             ) : r.status === 'ready' ? (
               <>
                 <Button title={`Set ${r.dial.text} and pull a check shot`} onPress={() => start('predicted')} />
-                <Button title="Done (I've made the change)" kind="secondary" onPress={onCancel} />
+                <Button title="Done, I've set it" kind="secondary" onPress={() => { if (onSetPosition && num(r.dial.entry) !== null) onSetPosition(num(r.dial.entry)); onCancel(); }} />
               </>
             ) : <Button title={`Pull a check shot on ${str(current)}`} onPress={() => start('current')} />
           ) : r.status === 'ready' ? (
@@ -169,7 +177,7 @@ export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, gri
               {r.dial.moveShort !== 'hold' ? <Button title={`Start from ${str(current)} instead`} kind="secondary" onPress={() => start('current')} /> : null}
             </>
           ) : <Button title={`Start from ${str(current)}`} onPress={() => start('current')} />}
-          <Button title="‹ Back" kind="link" onPress={() => setStep(askNow ? 'room' : maintain ? 'coffee' : 'position')} />
+          <Button title="‹ Back" kind="link" onPress={() => setStep(askNow ? 'room' : 'position')} />
         </Card>
         );
       })() : null}

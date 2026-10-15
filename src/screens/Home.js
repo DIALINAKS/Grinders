@@ -8,7 +8,7 @@ import { fmt } from '../engine';
 const when = ts => new Date(ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 
 /** Dashboard: the two operating modes, plus this grinder's saved calibrations. */
-export default function Home({ grinder, simple, items, run, runCoffee, runCount, onNew, onAdjust, onMaintain, onContinue, onGauge, onArchiveCoffee }) {
+export default function Home({ grinder, simple, items, run, runCoffee, runCount, onNew, onAdjust, onMaintain, onContinue, onGauge, onArchiveCoffee, unsaved, unsavedCoffee, onSaveUnsaved, hiddenCal, onRestoreCoffee, onUndoRecalibrate }) {
   const [archiving, setArchiving] = useState(null); // coffee id waiting for 'Yes, archive'
   return (
     <View style={{ gap: S.lg }}>
@@ -29,6 +29,31 @@ export default function Home({ grinder, simple, items, run, runCoffee, runCount,
         </Card>
       ) : null}
 
+      {hiddenCal ? (
+        <Card tone="warn">
+          <Text style={st.h}>WHY MAINTAIN IS LOCKED</Text>
+          {hiddenCal.kind === 'archived' ? (
+            <>
+              <Body>{hiddenCal.coffee.name} has a saved calibration, but the coffee is archived, so it's hidden.</Body>
+              <Button title={`Restore ${hiddenCal.coffee.name}`} onPress={() => onRestoreCoffee(hiddenCal.coffee.id)} />
+            </>
+          ) : (
+            <>
+              <Body>This grinder was recalibrated on {when(hiddenCal.when)}{hiddenCal.reason ? ` (${hiddenCal.reason})` : ''}, so calibrations saved before that are set aside. If that wasn't a burr change or service, undo it to bring them back.</Body>
+              <Button title="Undo the recalibration" onPress={onUndoRecalibrate} />
+            </>
+          )}
+        </Card>
+      ) : null}
+
+      {unsaved ? (
+        <Card tone="warn">
+          <Text style={st.h}>NOT SAVED YET</Text>
+          <Body>{unsavedCoffee ? unsavedCoffee.name : 'Your coffee'}: your last shot landed in the band (dial {unsaved.setting} · {fmt(unsaved.dose)} g → {fmt(unsaved.yield)} g · {fmt(unsaved.time)} s) but the calibration wasn't saved. Save it to unlock Maintain calibration.</Body>
+          <Button title="Save this as the calibration" onPress={() => onSaveUnsaved(unsaved)} />
+        </Card>
+      ) : null}
+
       <Pressable onPress={() => (items.length ? onAdjust(null) : onNew())} style={({ pressed }) => [st.mode, pressed && { opacity: 0.85 }]} accessibilityRole="button">
         <Text style={st.modeTitle}>DIAL IN A COFFEE</Text>
         <Text style={st.modeSub}>Opening up, or a new coffee.</Text>
@@ -38,7 +63,7 @@ export default function Home({ grinder, simple, items, run, runCoffee, runCount,
       <Pressable onPress={() => onMaintain(null)} disabled={!items.length} style={({ pressed }) => [st.mode, st.mode2, !items.length && { opacity: 0.5 }, pressed && { opacity: 0.85 }]} accessibilityRole="button">
         <Text style={st.modeTitle}>MAINTAIN CALIBRATION</Text>
         <Text style={st.modeSub}>During service.</Text>
-        <Text style={st.modeBody}>{items.length ? 'Getting busy or warmer? Check whether the grinder needs a change.' : 'Save a calibration first, then this unlocks.'}</Text>
+        <Text style={st.modeBody}>{items.length ? 'Getting busy or warmer? Check whether the grinder needs a change.' : run ? 'Save the calibration in progress first: tap Continue above.' : 'Save a calibration first, then this unlocks.'}</Text>
       </Pressable>
 
       <Card>

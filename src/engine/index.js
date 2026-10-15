@@ -27,6 +27,7 @@ export const RULE_DEFAULTS = {
   marks: 10,         // subdivisions between numbers on the dial
   minStep: 1,        // smallest step the barista can set, in subdivisions (1, 0.5 or 0.25)
   presets: '',       // saved doser presets, e.g. "5.8, 6.0, 6.2"
+  doserStep: 0.1,    // smallest step the doser timer can be set in: 0.1 or 0.01 s
   doserNotch: '',    // optional override: doser seconds per subdivision finer; blank = learned
   // House rules: OFF by default. Only used when a manager switches them on, and always
   // labelled as a house rule, never as a measured or verified figure.
@@ -44,7 +45,7 @@ export const MODELS = ['Mythos One', 'Compak E6', 'Mazzer', 'Other'];
 
 export function modelDefaults(model) {
   const n = (model || '').toLowerCase();
-  if (n.includes('mythos')) return { marks: 6, burr: 'controlled', presets: '5.8, 6.0, 6.2' };
+  if (n.includes('mythos')) return { marks: 6, burr: 'controlled', presets: '5.8, 6.0, 6.2', doserStep: 0.1 };
   if (n.includes('e6') || n.includes('compak')) return { burr: 'fan' };
   return {};
 }
@@ -78,12 +79,15 @@ export function toDial(x, M) {
   const mk = Math.floor(d + 1e-9);
   return { w, mk, q: Math.round((d - mk) * QTR) };
 }
-export const fmtDial = (x, M) => { if (!ok(x)) return '–'; const t = toDial(x, M); return `${t.w}.${t.mk}${FR[t.q]}`; };
+/** Subdivisions past the number, kept to 0.01 of a subdivision (enough for stepless grinders). */
+const subdivOf = (x, M) => { const w = Math.floor(x + 1e-9); return { w, d: Math.round((x - w) * M * 100) / 100 }; };
+const isQuarter = d => Math.abs(d * QTR - Math.round(d * QTR)) < 1e-6;
+export const fmtDial = (x, M) => { if (!ok(x)) return '–'; if (!isQuarter(subdivOf(x, M).d)) return toEntry(x, M); const t = toDial(x, M); return `${t.w}.${t.mk}${FR[t.q]}`; };
 export const fracText = q => { const whole = Math.floor(q + 1e-9), f = Math.round((q - whole) * QTR); return (whole ? String(whole) : '') + FR[f] || '0'; };
-export const marksText = q => `${fracText(q)} notch${q > 1 ? 'es' : ''}`;
-export const dialWords = (x, M) => { const t = toDial(x, M), d = t.mk + t.q / QTR; return d ? `number ${t.w}, notch ${fracText(d)}` : `on the ${t.w}`; };
+export const marksText = q => `${isQuarter(q) ? fracText(q) : String(+q.toFixed(2))} notch${q > 1 ? 'es' : ''}`;
+export const dialWords = (x, M) => { const { w, d } = subdivOf(x, M); if (!isQuarter(d)) return `number ${w}, notch ${+d.toFixed(2)}`; const t = toDial(x, M), q = t.mk + t.q / QTR; return q ? `number ${t.w}, notch ${fracText(q)}` : `on the ${t.w}`; };
 /** A dial value (notches) as what the barista types: 4 + 3/6 → "4.3". */
-export const toEntry = (x, M) => { const w = Math.floor(x + 1e-9), d = Math.round((x - w) * M * 4) / 4; return String(+(w + d / 10).toFixed(3)); };
+export const toEntry = (x, M) => { const { w, d } = subdivOf(x, M); return String(+(w + d / 10).toFixed(3)); };
 
 export function checkDialEntry(v, M) {
   if (!ok(v)) return 'Enter the grind setting.';
@@ -99,13 +103,14 @@ export const COV = ['roomTemp', 'humidity', 'groupTemp', 'yield', 'workload', 'd
 export const ENV = ['roomTemp', 'humidity'];
 export const SCALE = { roomTemp: 5, humidity: 10, groupTemp: 2, yield: 5, workload: 1, dose: 1 };
 export const LAMBDA = 3;      // pull towards zero for terms with no benchmark
+export const LAMBDA_MEASURED = 0.02; // once measured, the recorded results decide the size (only a token pull towards zero)
 export const PRIOR_W = 4;     // a benchmark counts like this many shots
 // Settings move in small steps (0.1–0.3 of a number), so a shot carries little weight on the
 // grind slope: SLOPE_W is the weight of ONE shot ±0.07 of a number from the mean (0.07² ≈ 0.005).
 export const SLOPE_W = 0.005;
 export const HALF_LIFE = 30;  // days: a shot this old counts half
 // evidence needed before a room-condition term is called "measured"
-export const EVIDENCE = { roomTemp: { n: 8, range: 3 }, humidity: { n: 8, range: 15 } };
+export const EVIDENCE = { roomTemp: { n: 5, range: 3 }, humidity: { n: 5, range: 15 } }; // 3 shots to dial in + 2 to confirm
 
 /**
  * What the grinder actually dropped for a shot. Differs from s.dose (what went in the basket)
@@ -139,12 +144,21 @@ export function stepResponse(shot, prev, rules) {
   return out;
 }
 
+/** Smallest step the grinder's doser timer can be set in, in seconds (0.1 or 0.01). */
+export const doserStepOf = rules => (num(rules && rules.doserStep) === 0.01 ? 0.01 : 0.1);
+export const doserDecimals = rules => (doserStepOf(rules) === 0.01 ? 2 : 1);
+/** Round a doser time to a step the grinder can actually be set to. */
+export const roundDoser = (sec, rules) => { const k = doserStepOf(rules) === 0.01 ? 100 : 10; return Math.round(sec * k) / k; };
+export const fmtDoser = (v, rules) => fmt(v, doserDecimals(rules));
+/** Seconds shown with 2 decimals only when they need them (e.g. 8.95), otherwise 1. */
+export const fmtSec = v => fmt(v, ok(v) && Math.abs(Math.round(v * 10) - v * 10) > 1e-6 ? 2 : 1);
+
 /** Doser time that gives the target dose, from one weighed drop: target ÷ (dropped ÷ doser time). */
-export function doserFor(target, droppedG, doserTime) {
+export function doserFor(target, droppedG, doserTime, rules) {
   const t = num(target), g = num(droppedG), d = num(doserTime);
   if (!ok(t) || !ok(g) || !ok(d) || g <= 0 || d <= 0) return null;
   const rate = g / d;
-  return { rate, seconds: Math.round((t / rate) * 10) / 10 };
+  return { rate, seconds: roundDoser(t / rate, rules), exact: t / rate, step: doserStepOf(rules) };
 }
 
 export function solve(A, b) {
@@ -219,8 +233,10 @@ export function envEvidence(L) {
     out[k] = { n: v.length, range, measured: v.length >= EVIDENCE[k].n && range >= EVIDENCE[k].range };
   });
   const wl = L.map(s => s.workload).filter(ok);
+  // workload (the barista's Quiet / Steady / Busy button): measured after 5 shots that include at least
+  // 2 at the quietest level logged and 2 at the busiest, the same 3-to-dial-in + 2-to-confirm routine as the room
   out.workload = { n: wl.length, range: wl.length ? Math.max(...wl) - Math.min(...wl) : 0,
-    measured: wl.length >= 12 && new Set(wl).size >= 2 && wl.filter(w => w === Math.max(...wl)).length >= 6 && wl.filter(w => w === Math.min(...wl)).length >= 6 };
+    measured: wl.length >= 5 && new Set(wl).size >= 2 && wl.filter(w => w === Math.max(...wl)).length >= 2 && wl.filter(w => w === Math.min(...wl)).length >= 2 };
   // humidity and temperature must have moved separately, or the data can't tell them apart
   const both = L.filter(s => ok(s.roomTemp) && ok(s.humidity));
   if (both.length >= 3) {
@@ -262,9 +278,13 @@ function fitOnce(L0, bench, pool, gauge) {
   const P = 2 + COV.length;
   const A = Array.from({ length: P }, () => Array(P).fill(0)), b = Array(P).fill(0);
   L.forEach(s => { const r = row(s), w = ok(s.w) ? s.w : 1; for (let i = 0; i < P; i++) { b[i] += w * r[i] * s.time; for (let j = 0; j < P; j++) A[i][j] += w * r[i] * r[j]; } });
+  // Before a room effect has much evidence its estimate is held close to zero (it is still used, just small). Once the
+  // evidence is there (envEvidence: 5+ shots over a real range), the recorded results decide its size.
+  const ev = envEvidence(L); // every recorded result counts
+  const roomW = k => (ev[k] && ev[k].measured && !ev.tangled ? LAMBDA_MEASURED : LAMBDA);
   const pr = {
-    roomTemp: gauge ? [bench.perC * SCALE.roomTemp, bench.perC ? PRIOR_W : LAMBDA] : [0, 1e6],
-    humidity: gauge ? [bench.perRH * SCALE.humidity, bench.perRH ? PRIOR_W : LAMBDA] : [0, 1e6],
+    roomTemp: gauge ? [bench.perC * SCALE.roomTemp, bench.perC ? PRIOR_W : roomW('roomTemp')] : [0, 1e6],
+    humidity: gauge ? [bench.perRH * SCALE.humidity, bench.perRH ? PRIOR_W : roomW('humidity')] : [0, 1e6],
     groupTemp: [0, LAMBDA], yield: [0, LAMBDA], dose: [0, LAMBDA],
     workload: bench.fan ? [bench.perLoad, bench.perLoad ? PRIOR_W : 1] : [0, 1e6],
   };
@@ -275,6 +295,9 @@ function fitOnce(L0, bench, pool, gauge) {
   const ssr = L.map(s => s.time - pred(s)).reduce((t, r) => t + r * r, 0);
   const my = avg(L.map(s => s.time)), sst = L.reduce((t, s) => t + (s.time - my) ** 2, 0);
   const sigma = n > 2 ? Math.sqrt(ssr / (n - 2)) : null;
+  // how sure we are of each room effect: standard error from the fit (null while there's no residual spread to judge by)
+  const se = {};
+  ENV.forEach(k => { const i = 2 + COV.indexOf(k); const e = Array(P).fill(0); e[i] = 1; const x = sigma !== null ? solve(A, e) : null; se[k] = x && x[i] > 0 ? sigma * Math.sqrt(x[i]) : null; });
   // grind rate (g/s) against setting, for doser time
   // grind rate learns from every weighed drop, including dose checks with no extraction
   const R = L0.filter(s => ok(s.setting) && ok(dropped(s)) && ok(s.doserTime) && s.doserTime > 0).map(s => ({ x: s.setting, y: dropped(s) / s.doserTime }));
@@ -293,7 +316,43 @@ function fitOnce(L0, bench, pool, gauge) {
     rateTrend = settingsTried >= 2 ? (x => { const xc = Math.min(xmax + 1, Math.max(xmin - 1, x)); return Math.max(rmin * 0.5, myr + slope * (xc - mx)); }) : null;
     drops = { n: R.length, settings: settingsTried };
   }
-  return { ok: true, n, distinct, beta, mean, cov, sigma, r2: sst > 0 ? 1 - ssr / sst : null, L, rate, rateTrend, drops, slopeSource, env: envEvidence(L.filter(s => s.role !== 'test')) }; // room/workload evidence: verified shots only
+  return { ok: true, n, distinct, beta, se, mean, cov, sigma, r2: sst > 0 ? 1 - ssr / sst : null, L, rate, rateTrend, drops, slopeSource, env: envEvidence(L) }; // room/workload evidence: every recorded result
+}
+
+/* ---------------- doser: what each second is worth in grams, against the room ---------------- */
+
+/**
+ * Learns the grind rate (grams per second of doser time) against room temperature and humidity from the
+ * weighed drops (shots and dose checks). No formula is assumed: with no spread in the readings the room terms
+ * are zero, and they firm up as drops are logged at different temperatures and humidities.
+ * Returns { perC, perRH } in grams per second, per °C and per % RH, plus how much evidence backs each.
+ */
+export function roomRate(rows) {
+  const D = rows.filter(s => ok(s.setting) && ok(dropped(s)) && ok(s.doserTime) && s.doserTime > 0 && ok(s.roomTemp) && ok(s.humidity));
+  if (D.length < 3) return null;
+  const xs = D.map(s => s.setting), Ts = D.map(s => s.roomTemp), Hs = D.map(s => s.humidity);
+  const mx = avg(xs), mT = avg(Ts), mH = avg(Hs);
+  const useX = new Set(xs).size >= 2;
+  const rT = Math.max(...Ts) - Math.min(...Ts), rH = Math.max(...Hs) - Math.min(...Hs);
+  // rate = a + b·setting + cT·(T − mean)/5 + cH·(RH − mean)/10, lightly held towards zero while data is thin
+  const row = s => [1, useX ? s.setting - mx : 0, (s.roomTemp - mT) / SCALE.roomTemp, (s.humidity - mH) / SCALE.humidity];
+  const A = Array.from({ length: 4 }, () => Array(4).fill(0)), b = Array(4).fill(0);
+  D.forEach(s => { const r = row(s), y = dropped(s) / s.doserTime; for (let i = 0; i < 4; i++) { b[i] += r[i] * y; for (let j = 0; j < 4; j++) A[i][j] += r[i] * r[j]; } });
+  A[1][1] += useX ? 0.1 : 1e6; A[2][2] += 0.1; A[3][3] += 0.1;
+  const beta = solve(A, b); if (!beta) return null;
+  const ev = k => { const n = D.length, range = k === 'roomTemp' ? rT : rH; return { n, range, measured: n >= EVIDENCE[k].n && range >= EVIDENCE[k].range }; };
+  return { perC: rT > 0 ? beta[2] / SCALE.roomTemp : 0, perRH: rH > 0 ? beta[3] / SCALE.humidity : 0, roomTemp: ev('roomTemp'), humidity: ev('humidity') };
+}
+
+/** Doser seconds to drop the target dose, from the last weighed drop, corrected for today's room. */
+function doserFromDrop(lastR, dose, room, rr) {
+  const r0 = dropped(lastR) / lastR.doserTime; // grams per second on that drop
+  let rNow = r0, roomSec = 0;
+  if (rr && room && ok(room.roomTemp) && ok(room.humidity) && ok(lastR.roomTemp) && ok(lastR.humidity)) {
+    rNow = Math.max(r0 * 0.5, r0 + rr.perC * (room.roomTemp - lastR.roomTemp) + rr.perRH * (room.humidity - lastR.humidity));
+    roomSec = dose / rNow - dose / r0;
+  }
+  return { seconds: dose / rNow, roomSec, rateNow: rNow };
 }
 
 /* ---------------- recommendation ---------------- */
@@ -312,7 +371,7 @@ export const SOURCES = {
  * It is a fixed, clearly labelled procedure (GUIDE_STEPS subdivisions in the right direction),
  * never a prediction. Each guided shot then measures the response.
  */
-function guided({ P, calRow, anchor, M, rules, step, lo, hi, target, dose }) {
+function guided({ P, calRow, anchor, M, rules, step, lo, hi, target, dose, note, room }) {
   const QM = M * QTR;
   let s0, t;
   if (anchor && anchor.kind === 'shot' && ok(num(anchor.time)) && ok(fromDial(num(anchor.setting), M))) { s0 = fromDial(num(anchor.setting), M); t = num(anchor.time); }
@@ -322,22 +381,25 @@ function guided({ P, calRow, anchor, M, rules, step, lo, hi, target, dose }) {
   const delta = t > hi ? coarser * subdiv / M : t < lo ? -coarser * subdiv / M : 0;
   const s1 = s0 + Math.round(delta / step) * step;
   const isHold = Math.abs(s1 - s0) < step / 2;
-  const moveShort = isHold ? 'hold' : `${marksText(Math.round(Math.abs(s1 - s0) * QM) / QTR)} ${t > hi ? 'coarser' : 'finer'}`;
+  const moveShort = isHold ? 'hold' : `${marksText(Math.round(Math.abs(s1 - s0) * M * 100) / 100)} ${t > hi ? 'coarser' : 'finer'}`;
   // doser: proportional from the last weighed drop only
   const rows = [...P, ...(calRow ? [calRow] : [])];
   const lastR = rows.filter(r => ok(dropped(r)) && ok(r.doserTime) && r.doserTime > 0).slice(-1)[0];
-  const doser = lastR && ok(dose) ? Math.round(lastR.doserTime * dose / dropped(lastR) * 10) / 10 : null;
+  const rr = roomRate(rows);
+  const dd = lastR && ok(dose) ? doserFromDrop(lastR, dose, room, rr) : null;
+  const doser = dd ? roundDoser(dd.seconds, rules) : null;
   return {
     status: 'ready', guided: true, M, model: null,
     dial: { value: s1, text: fmtDial(s1, M), entry: toEntry(s1, M), words: dialWords(s1, M), range: null, anchor: '', move: moveShort,
             capped: false, conservative: true, breakdown: [], delta: s1 - s0, anchorValue: s0, anchorText: fmtDial(s0, M), fromText: fmtDial(s0, M),
-            moveShort, reason: isHold ? '' : `${fmt(t)} s is ${t > hi ? 'slower' : 'faster'} than your ${fmt(lo, 0)}–${fmt(hi, 0)} s band` },
+            moveShort, reason: isHold ? '' : `${fmt(t)} s is ${t > hi ? 'slower' : 'faster'} than your ${fmt(lo, 0)}–${fmt(hi, 0)} s band${note ? `. ${note}` : ''}` },
     target, targetLo: lo, targetHi: hi, lo, hi, inRange: isHold, inBand: isHold, ifUnchanged: t, predictedTime: null,
-    confidence: 'Low', source: 'guidance', sourceText: SOURCES.guidance, label: 'Insufficient data', enoughHistory: false, notApplied: [],
+    confidence: 'Low', source: 'guidance', sourceText: SOURCES.guidance, label: 'Insufficient data', tier: 'insufficient', enoughHistory: false, notApplied: [], uncertain: [],
     slopeSource: 'none', env: {}, finerIsHigher: rules.dir === 'higher', direction: '',
     dose: { seconds: doser, target: dose, preset: null, lastSeconds: lastR ? lastR.doserTime : null, lastGrams: lastR ? dropped(lastR) : null,
-            change: lastR && doser !== null ? Math.round((doser - lastR.doserTime) * 10) / 10 : null, perNotch: null, perNotchSource: '',
-            drops: null, unknownPerNotch: !isHold && doser !== null, gapNotches: s1 - s0 },
+            change: lastR && doser !== null ? roundDoser(doser - lastR.doserTime, rules) : null, perNotch: null, perNotchSource: '',
+            drops: null, unknownPerNotch: !isHold && doser !== null, gapNotches: s1 - s0,
+            rateNow: dd ? dd.rateNow : null, roomSec: dd ? dd.roomSec : 0, room: rr },
     secondsPerNotch: null, secondsPerMark: null, secondsPerQuarter: null, shotsUsed: P.length, fitPercent: null, outside: false, tasteHint: '',
   };
 }
@@ -359,7 +421,12 @@ function guided({ P, calRow, anchor, M, rules, step, lo, hi, target, dose }) {
  */
 export function recommend({ shots, grinderShots, rules, gauge = true, now, anchor, nowTs }) {
   const M = dialMarks(rules), QM = M * QTR;
-  const P = prepare(shots, M, gauge, nowTs);
+  const P0 = prepare(shots, M, gauge, nowTs);
+  // Shots near where the grinder is now count most: the grind response is not assumed to be linear across
+  // the whole dial. A shot one whole number away counts half; dose checks and the rest are unaffected.
+  const near = anchor && anchor.kind === 'shot' ? fromDial(num(anchor.setting), M)
+    : anchor && anchor.kind === 'calibration' ? (ok(fromDial(num(anchor.current), M)) ? fromDial(num(anchor.current), M) : fromDial(num(anchor.cal.setting), M)) : null;
+  const P = ok(near) ? P0.map(s => (ok(s.setting) ? { ...s, w: s.w / (1 + (s.setting - near) ** 2) } : s)) : P0;
   const G = grinderShots ? prepare(grinderShots, M, gauge, nowTs) : P;
   const bench = benchmarks(rules);
   const cal = anchor && anchor.kind === 'calibration' ? anchor.cal : null;
@@ -377,8 +444,15 @@ export function recommend({ shots, grinderShots, rules, gauge = true, now, ancho
   const hasBand = ok(tLo) && ok(tHi) && tHi > tLo;
   const lo = hasBand ? tLo : target - 1, hi = hasBand ? tHi : target + 1;
   const step = stepOf(rules); // smallest settable step, in numbers
-  if (!m.ok) return guided({ P, calRow, anchor, M, rules, step, lo, hi, target, dose }) || { status: 'need-more', M, model: m };
+  const room = gauge ? { roomTemp: num(now.roomTemp), humidity: num(now.humidity) } : null;
+  if (!m.ok) return guided({ P, calRow, anchor, M, rules, step, lo, hi, target, dose, room }) || { status: 'need-more', M, model: m };
   const b1 = m.beta[1];
+  // The rule: finer = slower. A long shot always goes coarser, a short shot always goes finer.
+  // If the shots so far suggest the opposite (noise, a mistyped setting), don't trust the fit: follow the rule.
+  const finerSign = rules.dir === 'higher' ? 1 : -1; // sign seconds-per-number must have
+  if (b1 * finerSign <= 0) return guided({ P, calRow, anchor, M, rules, step, lo, hi, target, dose, room,
+    note: 'Your shots so far don\'t show the grind response clearly yet, so this follows the rule: long shot coarser, short shot finer' })
+    || { status: 'flat', M, model: m, secondsPerNotch: b1 };
   if (Math.abs(b1) < 0.3) return { status: 'flat', M, model: m, secondsPerNotch: b1 };
 
   const c = {
@@ -389,20 +463,24 @@ export function recommend({ shots, grinderShots, rules, gauge = true, now, ancho
   const last = m.L[m.L.length - 1];
   const parts = [];
   let anchorS, expected, anchorLabel, fromS;
-  const notApplied = [];
+  const notApplied = [], uncertain = [];
   const condShift = ref => {
     let shift = 0;
     COV.forEach((k, i) => {
       // only move for a condition measured BOTH then and now; never fill a missing reading
       if (!ok(c[k]) || !ok(ref[k])) return;
-      // room and workload effects are used only once measured on this grinder (or a house rule is on)
-      if ((ENV.includes(k) || k === 'workload') && !bench.house && !(m.env[k] && m.env[k].measured)) {
-        if (Math.abs(c[k] - ref[k]) > 1e-9) notApplied.push({ k, from: ref[k], to: c[k] });
-        return;
+      // Room and workload are ALWAYS taken into account when they're measured. No formula is assumed: the size of
+      // each effect is whatever this grinder's own results show so far (zero until they show one), and it sharpens
+      // with every shot. While the evidence is thin or inconsistent, the prediction is flagged as still learning.
+      if ((ENV.includes(k) || k === 'workload') && !bench.house && Math.abs(c[k] - ref[k]) > 1e-9) {
+        const measured = !!(m.env[k] && m.env[k].measured);
+        const se = m.se && m.se[k];
+        const consistent = !ENV.includes(k) || (se !== null && se !== undefined && Math.abs(m.beta[2 + i]) >= 2 * se);
+        if (!measured || !consistent) uncertain.push({ k, from: ref[k], to: c[k] });
       }
       const d = m.beta[2 + i] * (m.cov(k, c[k]) - m.cov(k, ref[k]));
       shift += d;
-      if (Math.abs(d / b1) >= 0.5 / QM) parts.push({ k, from: ref[k], to: c[k], notch: -d / b1, seconds: d });
+      if (Math.abs(d / b1) >= step / 2) parts.push({ k, from: ref[k], to: c[k], notch: -d / b1, seconds: d });
     });
     return shift;
   };
@@ -413,7 +491,7 @@ export function recommend({ shots, grinderShots, rules, gauge = true, now, ancho
   } else if (cal) {
     const calS = calRow.setting, cur = ok(fromDial(num(anchor.current), M)) ? fromDial(num(anchor.current), M) : calS;
     fromS = calS; anchorS = cur;
-    if (Math.abs(cur - calS) >= 0.5 / QM) parts.push({ k: 'position', from: calS, to: cur, notch: calS - cur, seconds: b1 * (cur - calS) });
+    if (Math.abs(cur - calS) >= step / 2) parts.push({ k: 'position', from: calS, to: cur, notch: calS - cur, seconds: b1 * (cur - calS) });
     expected = num(cal.time) + b1 * (cur - calS) + condShift(calRow);
     anchorLabel = `Saved calibration ${fmtDial(calS, M)} ran ${fmt(num(cal.time))} s` + (Math.abs(cur - calS) > 1e-6 ? `; grinder now on ${fmtDial(cur, M)}` : '');
   } else {
@@ -430,13 +508,19 @@ export function recommend({ shots, grinderShots, rules, gauge = true, now, ancho
     conservative = true;
     rawDelta = rawDelta * 0.5;
     if (Math.abs(rawDelta) > 0.5) { rawDelta = 0.5 * Math.sign(rawDelta); capped = true; }
-    if (!inRange && Math.abs(rawDelta) < 1 / QM) rawDelta = Math.sign(rawDelta) / QM; // at least ¼ mark
+    if (!inRange && Math.abs(rawDelta) < step) rawDelta = Math.sign(rawDelta) * step; // at least the smallest physical step
   } else if (Math.abs(rawDelta) > 1) { rawDelta = Math.sign(rawDelta); capped = true; }
-  if (inRange) rawDelta = 0; // inside the target band: taste it, no change
+  // Inside the target band: normally no change. The exception is a prediction from a saved calibration where
+  // the evidence (a measured room effect or the grinder having moved) puts the shot clearly off the target:
+  // further off than this coffee's own shot-to-shot spread, and by at least one physical step's worth.
+  // Then the smallest step(s) back towards the target is a micro-adjustment.
+  const drift = expected - target, stepSec = Math.abs(b1) * step;
+  const micro = inRange && !!cal && parts.length > 0 && ok(m.sigma) && Math.abs(drift) > m.sigma && Math.abs(drift) >= stepSec;
+  if (inRange && !micro) rawDelta = 0;
   // only whole physical steps: the barista can't set 0.37 of a subdivision
   const delta = Math.round(rawDelta / step) * step;
   const s0 = anchorS + delta;
-  const word = n => { const k = Math.round(Math.abs(n) * QM); if (!k) return 'hold'; return `${marksText(k / QTR)} ${n * b1 > 0 ? 'finer' : 'coarser'}`; };
+  const word = n => { const sd = Math.round(Math.abs(n) * M * 100) / 100; if (sd < 0.005) return 'hold'; return `${marksText(sd)} ${n * b1 > 0 ? 'finer' : 'coarser'}`; };
   const isHold = Math.abs(delta) < step / 2;
   const move = isHold ? 'hold, no change needed' : `${word(delta)} (${fmtDial(anchorS, M)} → ${fmtDial(s0, M)})`;
 
@@ -461,9 +545,12 @@ export function recommend({ shots, grinderShots, rules, gauge = true, now, ancho
   else if (m.n >= 6 && rangeNotch !== null && rangeNotch * M <= 1) confidence = 'High';
   else confidence = 'Moderate';
   // Verified = the saved calibration stands as it is; Predicted = calculated from measured history
-  const label = cal && isHold && !parts.length ? 'Verified setting' : 'Predicted setting';
+  // Verified: plenty of consistent data and nothing left unaccounted for. Provisional: limited but relevant data,
+  // confirm with a shot. (Insufficient data is the guided path, before this grinder's response is measured.)
+  const tier = confidence === 'High' && uncertain.length === 0 ? 'verified' : 'provisional';
+  const label = tier === 'verified' ? 'Verified recommendation' : 'Provisional recommendation';
   const notAppliedText = notApplied.map(p => `${NAMES[p.k]} ${showVal(p.k, p.from)} → ${showVal(p.k, p.to)}`);
-  const enoughHistory = notApplied.length === 0;
+  const enoughHistory = uncertain.length === 0;
 
   // ---- doser time: target dose ÷ grind rate at the new setting ----
   const finerStep = b1 > 0 ? 1 : -1;
@@ -475,13 +562,14 @@ export function recommend({ shots, grinderShots, rules, gauge = true, now, ancho
   let kDoser = null, kSrc = '';
   if (ok(kRule) && kRule > 0) { kDoser = kRule * M; kSrc = 'house rule'; }
   else if (doserPerNotch !== null && Math.abs(doserPerNotch) >= 0.02) { kDoser = doserPerNotch; kSrc = 'learned from your weighed drops'; }
-  let doser = null, doserUnknown = false, finerGap = 0;
+  let doser = null, doserUnknown = false, finerGap = 0, dd = null;
+  const rr = gauge ? roomRate(Pd) : null;
   if (lastR && ok(dose)) {
     const loadNotch = (parts.find(p => p.k === 'workload') || {}).notch || 0;
     finerGap = ((s0 - lastR.setting) - loadNotch) * finerStep;
-    const baseT = lastR.doserTime * dose / dropped(lastR);
-    doser = Math.round((baseT + (kDoser || 0) * finerGap) * 10) / 10;
-    doserUnknown = Math.abs(finerGap) >= 0.5 / QM && kDoser === null;
+    dd = doserFromDrop(lastR, dose, room, rr);
+    doser = roundDoser(dd.seconds + (kDoser || 0) * finerGap, rules);
+    doserUnknown = Math.abs(finerGap) >= step / 2 && kDoser === null;
   }
   const rateNow = doser ? dose / doser : null;
   const presets = String(rules.presets || '').split(/[,\s]+/).map(parseFloat).filter(v => ok(v) && v > 0);
@@ -504,12 +592,14 @@ export function recommend({ shots, grinderShots, rules, gauge = true, now, ancho
             reason: (() => { const p = [...parts].sort((a, b) => Math.abs(b.notch) - Math.abs(a.notch))[0];
               return p ? `${NAMES[p.k]} ${showVal(p.k, p.from)} → ${showVal(p.k, p.to)}: ${word(p.notch)}` : ''; })() },
     target, targetLo: hasBand ? tLo : null, targetHi: hasBand ? tHi : null, lo, hi, inRange, inBand: inRange, ifUnchanged: expected, predictedTime: expected + b1 * delta,
-    confidence, source, sourceText: SOURCES[source], enoughHistory, label, notApplied: notAppliedText,
+    confidence, source, sourceText: SOURCES[source], enoughHistory, label, tier, notApplied: notAppliedText, micro,
+    uncertain: uncertain.map(p => `${NAMES[p.k]} ${showVal(p.k, p.from)} → ${showVal(p.k, p.to)}`),
     slopeSource: m.slopeSource, env: m.env,
-    finerIsHigher: b1 > 0,
+    finerIsHigher: rules.dir === 'higher',
     direction: b1 < 0 ? 'Lower numbers run slower on this grinder.' : 'Higher numbers run slower on this grinder.',
     dose: { seconds: doser, target: dose, preset, lastSeconds: lastR ? lastR.doserTime : null, lastGrams: lastR ? dropped(lastR) : null,
-            change: lastR && doser !== null ? Math.round((doser - lastR.doserTime) * 10) / 10 : null, perNotch: kDoser, perNotchSource: kSrc, drops: m.drops, unknownPerNotch: doserUnknown, gapNotches: finerGap },
+            change: lastR && doser !== null ? roundDoser(doser - lastR.doserTime, rules) : null, perNotch: kDoser, perNotchSource: kSrc, drops: m.drops, unknownPerNotch: doserUnknown, gapNotches: finerGap,
+            rateNow: dd ? dd.rateNow : null, roomSec: dd ? dd.roomSec : 0, room: rr },
     secondsPerNotch: Math.abs(b1), secondsPerMark: Math.abs(b1) / M, secondsPerQuarter: Math.abs(b1) / M / QTR,
     shotsUsed: m.n, fitPercent: m.r2 !== null && m.n > 2 ? Math.round(Math.max(0, m.r2) * 100) : null,
     outside: span > 0 && (s0 < sLo - span * 0.5 || s0 > sHi + span * 0.5),

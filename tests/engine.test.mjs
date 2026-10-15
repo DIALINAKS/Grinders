@@ -1,6 +1,6 @@
 // Run with: npm test   (node tests/engine.test.mjs)
 // Checks the Dial In calibration engine (v2).
-import { checkShot, stepResponse, doserFor, recommend, rulesFor, fromDial, fmtDial, checkDialEntry, reconcileGrinders, usageText, insights, redialCheck } from '../src/engine/index.js';
+import { roomRate, toEntry, checkShot, stepResponse, doserFor, roundDoser, doserStepOf, recommend, rulesFor, fromDial, fmtDial, checkDialEntry, reconcileGrinders, usageText, insights, redialCheck } from '../src/engine/index.js';
 import assert from 'node:assert/strict';
 
 const mazzer = rulesFor({ model: 'Mazzer' });          // 10 subdivisions, finer = lower number, no house rules
@@ -41,7 +41,7 @@ t('second shot measures the grind response (brief: 6.5 → 38 s, 6.7 → 33 s)',
   assert.equal(r.model.slopeSource, 'measured');
   assert.equal(Math.round(r.secondsPerNotch), 25);   // 2 subdivisions took 5 s off: 2.5 s per subdivision, unaltered by any benchmark
   assert.equal(r.dial.text, '6.8');                   // whole subdivisions only
-  assert.equal(r.label, 'Predicted setting');
+  assert.equal(r.label, 'Provisional recommendation'); // 2 shots: limited data, confirm with a shot
   assert.equal(r.source, 'grinder');
   assert.ok(/coarser/.test(r.dial.moveShort));
   assert.ok(fromDial(6.7, 10) < r.dial.value);
@@ -69,7 +69,7 @@ t('house rule on: temperature changes, humidity does not (1 number per 4 °C)', 
   assert.equal(row.status, 'house rule');
   assert.ok(!envRow(r, 'Humidity'));
   assert.equal(r.confidence, 'Low');           // house rules never earn more than Low
-  assert.equal(r.label, 'Predicted setting');
+  assert.equal(r.label, 'Provisional recommendation');
 });
 
 t('house rule on: humidity changes, temperature does not (12 % RH = 1 °C)', () => {
@@ -83,13 +83,13 @@ t('house rule on: both change, the two effects add', () => {
   assert.ok(envRow(r, 'Room temperature') && envRow(r, 'Humidity'));
 });
 
-t('default (no house rules): an unmeasured room change is NOT applied, the verified setting stands', () => {
+t('default: a room change with no history yet is taken into account at what the shots show (nothing yet) and flagged as still learning', () => {
   const r = recommend({ shots: prior, rules: mazzer, now: { ...now0, roomTemp: 23, humidity: 70 }, anchor: { kind: 'calibration', cal, current: 4.0 } });
   assert.equal(r.dial.breakdown.length, 0);
   assert.equal(r.dial.moveShort, 'hold');
-  assert.equal(r.label, 'Verified setting');
+  assert.equal(r.label, 'Provisional recommendation'); // room change not yet measured: verify with a shot
   assert.equal(r.enoughHistory, false);
-  assert.ok(r.notApplied.some(t => t.startsWith('Room temperature')));
+  assert.ok(r.uncertain.some(t => t.startsWith('Room temperature')));
 });
 
 t('whole physical steps only: smallest step of 1 subdivision', () => {
@@ -196,6 +196,138 @@ t('membership', () => {
   assert.deepEqual(reconcileGrinders('business', [{ id: 'a' }, { id: 'b', archived: true }]), { mustChoose: false, restore: ['b'] });
   assert.equal(usageText('free', [{ id: 'a' }], Array.from({ length: 12 }, (_, i) => ({ id: 's' + i }))), 'Shots used: 12 / 20');
   assert.equal(usageText('free', [{ id: 'a' }], [{ id: 'x', sample: true }, { id: 'y' }]), 'Shots used: 1 / 20');
+});
+
+t('doser time follows the grinder\'s timer steps', () => {
+  // 18.1 g on 9.0 s: exact correction is 8.95 s
+  assert.equal(doserFor(18, 18.1, 9.0, { doserStep: 0.1 }).seconds, 9.0);   // 0.1 s timer: can't get closer
+  assert.equal(doserFor(18, 18.1, 9.0, { doserStep: 0.01 }).seconds, 8.95); // 0.01 s timer: registers the change
+  assert.equal(doserFor(18, 18.4, 9.0, { doserStep: 0.1 }).seconds, 8.8);   // bigger miss corrects in 0.1 s steps
+  assert.equal(doserStepOf(rulesFor({ model: 'Mythos One' })), 0.1);
+  assert.equal(roundDoser(8.954, { doserStep: 0.01 }), 8.95);
+  const shots = [{ setting: 6.5, time: 35, dose: 18, ground: 18.1, doserTime: 9, yield: 36, ts: day(0) }];
+  const r = recommend({ shots, rules: { ...mazzer, doserStep: 0.01 }, now: now0, anchor: { kind: 'shot', setting: 6.5, time: 35 } });
+  assert.equal(r.dose.seconds, 8.95);
+});
+
+t('a long shot always goes coarser and a short shot finer, even when noisy shots disagree', () => {
+  // Mazzer: finer = lower number. These noisy shots wrongly suggest lower number = faster.
+  const noisy = [
+    { setting: 6.5, time: 30, dose: 18, yield: 36, ts: day(0) },
+    { setting: 6.3, time: 27, dose: 18, yield: 36, ts: day(0) },
+    { setting: 6.4, time: 36, dose: 18, yield: 36, ts: day(0) },
+  ];
+  const long = recommend({ shots: noisy, rules: mazzer, now: now0, anchor: { kind: 'shot', setting: 6.4, time: 36 } });
+  assert.ok(long.dial.value > 64 - 1e-9 || long.dial.entry > 6.4, 'long shot must move to a higher (coarser) number');
+  assert.ok(/coarser/.test(long.dial.moveShort));
+  const short = recommend({ shots: noisy, rules: mazzer, now: now0, anchor: { kind: 'shot', setting: 6.4, time: 24 } });
+  assert.ok(Number(short.dial.entry) < 6.4 && /finer/.test(short.dial.moveShort));
+  // a well-behaved grinder still goes coarser on a long shot
+  const good = [
+    { setting: 6.5, time: 30, dose: 18, yield: 36, ts: day(0) },
+    { setting: 6.3, time: 34, dose: 18, yield: 36, ts: day(0) },
+    { setting: 6.1, time: 38, dose: 18, yield: 36, ts: day(0) },
+  ];
+  const g = recommend({ shots: good, rules: mazzer, now: now0, anchor: { kind: 'shot', setting: 6.1, time: 38 } });
+  assert.ok(Number(g.dial.entry) > 6.1 && /coarser/.test(g.dial.moveShort));
+});
+
+// ---- micro-adjustments and evidence-based room effects ----
+const noise = [0.2, -0.2, 0.1, -0.1, 0, 0.15, -0.15, 0.05, -0.05, 0.1, -0.1, 0];
+const roomShots = effectPerC => {
+  const out = []; let i = 0;
+  for (const T of [18, 19, 20, 21, 22, 23, 24]) for (const sgt of [6.3, 6.5, 6.7]) {
+    out.push({ setting: sgt, roomTemp: T, humidity: 55, dose: 18, yield: 36, ts: day(0),
+      time: +(30 + (6.5 - sgt) * 25 + effectPerC * (T - 20) + noise[i++ % noise.length]).toFixed(2) });
+  }
+  return out;
+};
+const calR = { setting: 6.5, time: 30, dose: 18, yield: 36, roomTemp: 20, humidity: 55, ts: day(0) };
+
+t('room change the shots show has no real effect: no adjustment required', () => {
+  const r = recommend({ shots: roomShots(0), rules: { ...mazzer, minStep: 0.1 }, now: { ...now0, roomTemp: 21, humidity: 55 }, anchor: { kind: 'calibration', cal: calR, current: 6.5 } });
+  assert.equal(r.dial.moveShort, 'hold');
+  assert.ok(r.uncertain.some(x => x.startsWith('Room temperature'))); // used, but flagged: no consistent effect yet
+  assert.equal(r.micro, false);
+});
+
+t('consistent room effect + stepless grinder: smallest justified micro-adjustment', () => {
+  // the data shows +1 °C runs 1 s faster here; 20 → 22 °C puts the shot at 28 s
+  const r = recommend({ shots: roomShots(-1), rules: { ...mazzer, minStep: 0.1 }, now: { ...now0, roomTemp: 22, humidity: 55 }, anchor: { kind: 'calibration', cal: calR, current: 6.5 } });
+  assert.equal(r.micro, true);
+  assert.ok(/finer/.test(r.dial.moveShort));                 // warmer ran faster, so finer
+  const e = Number(r.dial.entry);                              // 2 s ÷ 25 s per number ≈ 0.08 → about 6.42, not a whole subdivision
+  assert.ok(e >= 6.41 && e <= 6.44, `got ${r.dial.entry}`);
+  assert.ok(Math.abs(r.predictedTime - 30) < 0.5);
+});
+
+t('same room effect, but the grinder only steps in whole subdivisions: leave it', () => {
+  // one subdivision = 2.5 s here, more than the 2 s drift, so moving would overshoot: no adjustment
+  const r = recommend({ shots: roomShots(-1), rules: { ...mazzer, minStep: 1 }, now: { ...now0, roomTemp: 22, humidity: 55 }, anchor: { kind: 'calibration', cal: calR, current: 6.5 } });
+  assert.equal(r.dial.moveShort, 'hold');
+});
+
+t('stepless settings read and write to 0.01', () => {
+  assert.equal(toEntry(fromDial(6.52, 10), 10), '6.52');
+  assert.equal(fmtDial(fromDial(6.52, 10), 10), '6.52');
+  assert.equal(fmtDial(fromDial(6.55, 10), 10), '6.5½');      // quarter steps keep their usual look
+});
+
+t('professional: room readings count from the first shots, flagged while evidence is thin', () => {
+  // only 4 shots (under the 5 needed), but they show warmer = faster
+  const few = [
+    { setting: 6.5, roomTemp: 19, humidity: 55, time: 31.0 }, { setting: 6.3, roomTemp: 20, humidity: 55, time: 35.0 },
+    { setting: 6.7, roomTemp: 20, humidity: 55, time: 25.0 }, { setting: 6.5, roomTemp: 22, humidity: 55, time: 28.1 },
+  ].map(x => ({ ...x, dose: 18, yield: 36, ts: day(0) }));
+  const r = recommend({ shots: few, rules: mazzer, now: { ...now0, roomTemp: 24, humidity: 55 }, anchor: { kind: 'calibration', cal: calR, current: 6.5 } });
+  assert.ok(r.ifUnchanged < 30, `room taken into account: expected faster than 30 s, got ${r.ifUnchanged}`);
+  assert.ok(r.uncertain.some(x => x.startsWith('Room temperature')));
+  assert.equal(r.tier, 'provisional');
+  assert.equal(r.env.roomTemp.measured, false);
+});
+
+t('5 shots across 3 °C (3 to dial in + 2 to confirm) are enough to call the room effect measured', () => {
+  const five = [
+    { setting: 6.5, roomTemp: 19, humidity: 55, time: 31.0 }, { setting: 6.3, roomTemp: 20, humidity: 55, time: 35.0 },
+    { setting: 6.7, roomTemp: 20, humidity: 55, time: 25.0 }, { setting: 6.5, roomTemp: 21, humidity: 55, time: 29.0 },
+    { setting: 6.5, roomTemp: 22, humidity: 55, time: 28.0 },
+  ].map(x => ({ ...x, dose: 18, yield: 36, ts: day(0) }));
+  const r = recommend({ shots: five, rules: mazzer, now: { ...now0, roomTemp: 24, humidity: 55 }, anchor: { kind: 'calibration', cal: calR, current: 6.5 } });
+  assert.equal(r.env.roomTemp.measured, true);
+  assert.ok(!r.uncertain.some(x => x.startsWith('Room temperature')));
+  assert.ok(r.ifUnchanged < 28.5, `got ${r.ifUnchanged}`);   // 4 °C warmer ≈ 4 s faster on this grinder
+});
+
+t('home barista (no gauge): room readings are not used', () => {
+  const r = recommend({ shots: roomShots(-1), rules: mazzer, gauge: false, now: { ...now0, roomTemp: 24, humidity: 55 }, anchor: { kind: 'calibration', cal: calR, current: 6.5 } });
+  assert.ok(!r.dial.breakdown.some(b => b.label.startsWith('Room')));
+  assert.equal(r.dial.moveShort, 'hold');
+});
+
+t('doser: what each second is worth in grams is learned against temperature and humidity', () => {
+  // same setting; each +1 °C the grinder drops 0.05 g/s more (humidity steady)
+  const drops = [18, 19, 20, 21, 22, 23, 24].map(T => ({ setting: 6.5, roomTemp: T, humidity: 55, doserTime: 7, ground: +(7 * (18 / 7 + 0.05 * (T - 20))).toFixed(2), ts: day(0) }));
+  const rr = roomRate(drops.map(d => ({ ...d, setting: fromDial(d.setting, 10) })));
+  assert.ok(Math.abs(rr.perC - 0.05) < 0.01, `perC ${rr.perC}`);
+  const shots = [...drops, { setting: 6.5, time: 30, dose: 18, ground: 18, doserTime: 7, roomTemp: 20, humidity: 55, yield: 36, ts: day(0) }];
+  const r = recommend({ shots, rules: { ...mazzer, doserStep: 0.01 }, now: { ...now0, roomTemp: 24, humidity: 55 }, anchor: { kind: 'shot', setting: 6.5, time: 30 } });
+  // at 24 °C the grinder drops 18/7 + 0.2 ≈ 2.77 g/s, so 18 g needs about 6.5 s, not 7.0
+  assert.ok(Math.abs(r.dose.seconds - 6.49) <= 0.05, `doser ${r.dose.seconds}`);
+  assert.ok(r.dose.roomSec < 0);
+});
+
+t('workload button: 5 shots with 2+ quiet and 2+ busy count as measured, and busier burrs are corrected for', () => {
+  const compak = rulesFor({ model: 'Compak E6' }); // fan-cooled, finer = lower number
+  // busy burrs warm up and run faster: 2 s quicker at "busy" at the same setting
+  const shots = [
+    { setting: 6.5, workload: 0, time: 30.0 }, { setting: 6.3, workload: 0, time: 35.0 }, { setting: 6.5, workload: 2, time: 28.0 },
+    { setting: 6.7, workload: 2, time: 23.0 }, { setting: 6.5, workload: 1, time: 29.0 },
+  ].map(x => ({ ...x, dose: 18, yield: 36, ts: day(0) }));
+  const r = recommend({ shots, rules: compak, gauge: false, now: { ...now0, workload: 2 }, anchor: { kind: 'calibration', cal: { ...calR, workload: 0 }, current: 6.5 } });
+  assert.equal(r.env.workload.measured, true);
+  assert.ok(r.ifUnchanged < 29.5, `busy should run faster, got ${r.ifUnchanged}`);
+  const few = recommend({ shots: shots.slice(0, 4), rules: compak, gauge: false, now: { ...now0, workload: 2 }, anchor: { kind: 'calibration', cal: { ...calR, workload: 0 }, current: 6.5 } });
+  assert.equal(few.env.workload.measured, false);
 });
 
 t('big shifts ask for a re-dial, small ones do not', () => {

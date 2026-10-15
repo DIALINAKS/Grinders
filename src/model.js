@@ -13,7 +13,7 @@ export function bandOf(x) {
   if (x && ok(x.target)) return [x.target - 1, x.target + 1];
   return [DEFAULTS.tLo, DEFAULTS.tHi];
 }
-const inBand = s => { const [lo, hi] = bandOf(s); return ok(s.time) && s.time >= lo && s.time <= hi; };
+export const inBand = s => { const [lo, hi] = bandOf(s); return ok(s.time) && s.time >= lo && s.time <= hi; };
 const byTs = (a, b) => (a.ts < b.ts ? -1 : 1);
 
 /** Upgrade saved data from the first testing build (coffee = free text on each shot). */
@@ -50,7 +50,7 @@ export function migrate(st) {
 function calFromShot(s, grinderId, coffeeId, history, confidence, imported) {
   const [lo, hi] = bandOf(s);
   return {
-    id: newId('k'), grinderId, coffeeId, setting: s.setting, doserTime: s.doserTime ?? null, dose: s.dose, yield: s.yield,
+    id: newId('k'), grinderId, coffeeId, setting: s.setting, doserTime: s.doserTime ?? null, dose: s.dose, basket: s.basket ?? null, yield: s.yield,
     time: s.time, targetLo: lo, targetHi: hi, roomTemp: s.roomTemp ?? null, humidity: s.humidity ?? null, workload: s.workload ?? null,
     groupTemp: s.groupTemp ?? null, confidence, history: history.slice(-8).map(h => ({ setting: h.setting, time: h.time })),
     active: true, imported: !!imported, sample: !!s.sample, ts: s.ts,
@@ -87,7 +87,8 @@ export function saveCalibration(st, run, confidence) {
   const runShots = st.shots.filter(s => s.runId === run.id && s.time != null && !s.excluded).sort(byTs);
   const last = runShots[runShots.length - 1];
   if (!last) return st;
-  const cal = calFromShot({ ...last, targetLo: run.tLo, targetHi: run.tHi }, run.grinderId, run.coffeeId, runShots, confidence, false);
+  // the calibration keeps the run's TARGET dose (e.g. 18 g), not what happened to go in the basket on the last shot (e.g. 18.1 g)
+  const cal = calFromShot({ ...last, targetLo: run.tLo, targetHi: run.tHi, dose: run.dose, basket: last.dose }, run.grinderId, run.coffeeId, runShots, confidence, false);
   return {
     ...st,
     // the saved shot is the verified one; the others in the run stay as test shots
@@ -95,6 +96,30 @@ export function saveCalibration(st, run, confidence) {
     calibrations: [...st.calibrations.map(k => (k.grinderId === run.grinderId && k.coffeeId === run.coffeeId ? { ...k, active: false } : k)), cal],
     run: null,
     coffee: { ...st.coffee, [run.grinderId]: run.coffeeId },
+  };
+}
+
+/** The latest in-band shot on this grinder whose coffee has no saved calibration (e.g. Save was never tapped). */
+export function unsavedInBand(st, grinder) {
+  if (!grinder) return null;
+  const shots = epochShots(st, grinder).filter(s => s.kind !== 'dose' && !s.excluded && inBand(s));
+  for (let i = shots.length - 1; i >= 0; i--) {
+    const s = shots[i], c = coffeeById(st, s.coffeeId);
+    if (c && !c.archived && !activeCal(st, grinder, s.coffeeId)) return s;
+  }
+  return null;
+}
+
+/** Save a calibration from one logged in-band shot, when the run it came from is no longer open. */
+export function saveCalibrationFromShot(st, shot) {
+  const history = st.shots.filter(s => s.grinderId === shot.grinderId && s.coffeeId === shot.coffeeId && s.time != null && !s.excluded && s.ts <= shot.ts).sort(byTs);
+  // the target dose: what went in the basket after any top-up (the barista tops up to the target)
+  const cal = calFromShot({ ...shot, basket: shot.dose }, shot.grinderId, shot.coffeeId, history, 'Moderate', false);
+  return {
+    ...st,
+    shots: st.shots.map(s => (s.id === shot.id ? { ...s, role: 'verified' } : s)),
+    calibrations: [...st.calibrations.map(k => (k.grinderId === shot.grinderId && k.coffeeId === shot.coffeeId ? { ...k, active: false } : k)), cal],
+    run: st.run && st.run.grinderId === shot.grinderId && st.run.coffeeId === shot.coffeeId ? null : st.run,
   };
 }
 
