@@ -12,6 +12,7 @@ export const C = {
   accentBright: '#5CCFCF',// teal for links and text
   accentSoft: '#1E3A4A',  // teal-tinted panels
   accentLine: '#2E6E7A',  // border of teal-tinted panels
+  papaya: '#FF8000',     // McLaren papaya orange: a few highlight borders only
   onAccent: '#1C1C34',    // text on teal
   white: '#FFF6DF',       // headline text (cream)
   good: '#8FD8A8',        // mint green: in range

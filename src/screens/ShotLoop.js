@@ -321,7 +321,7 @@ const st = StyleSheet.create({
   why: { color: C.accentBright, fontWeight: '700', fontSize: 15 },
   bigField: { flex: 1, backgroundColor: C.accentSoft, borderRadius: R.md, borderWidth: 1, borderColor: C.accentLine, padding: S.md, alignItems: 'center', gap: 4 },
   bigInput: { color: C.white, fontSize: 36, fontWeight: '800', minWidth: 90, textAlign: 'center', paddingVertical: 2 },
-  timeBox: { backgroundColor: C.accentSoft, borderRadius: R.md, borderWidth: 1, borderColor: C.accentLine, padding: S.lg, alignItems: 'center' },
+  timeBox: { backgroundColor: C.accentSoft, borderRadius: R.md, borderWidth: 1.5, borderColor: C.papaya, padding: S.lg, alignItems: 'center' },
   timeRow: { flexDirection: 'row', alignItems: 'center', gap: S.sm, marginVertical: 4 },
   timeInput: { color: C.white, fontSize: 48, fontWeight: '800', width: 170, height: 72, textAlign: 'center', padding: 0,
     backgroundColor: C.surface, borderRadius: R.md, borderWidth: 1, borderColor: C.accentLine },

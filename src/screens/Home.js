@@ -100,7 +100,7 @@ const st = StyleSheet.create({
   h: { color: C.ink, fontSize: 15, fontWeight: '800', letterSpacing: 0.8 },
   small: { color: C.muted, fontSize: 13 },
   mode: { backgroundColor: C.accent, borderRadius: R.lg, padding: S.xl, gap: 6 },
-  mode2: { backgroundColor: C.surface, borderWidth: 2, borderColor: C.accent },
+  mode2: { backgroundColor: C.surface, borderWidth: 2, borderColor: C.papaya },
   modeTitle: { color: C.white, fontSize: 20, fontWeight: '800', letterSpacing: 1 },
   modeSub: { color: C.white, fontSize: 15, fontWeight: '700' },
   onAmber: { color: C.onAccent },

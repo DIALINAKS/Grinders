@@ -100,7 +100,7 @@ export function Note({ children, tone }) {
 const st = StyleSheet.create({
   label: { color: C.muted, fontSize: 11, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 6 },
   card: { backgroundColor: C.surface, borderRadius: R.lg, borderWidth: 1, borderColor: C.line, padding: S.lg, gap: S.md },
-  cardAccent: { backgroundColor: C.accentSoft, borderColor: C.accentLine },
+  cardAccent: { backgroundColor: C.accentSoft, borderColor: C.papaya, borderWidth: 1.5 },
   cardWarn: { borderColor: C.warn },
   h2: { color: C.ink, fontSize: 18, fontWeight: '700' },
   body: { color: C.ink, fontSize: 14, lineHeight: 20 },
@@ -115,7 +115,7 @@ const st = StyleSheet.create({
   segTextOn: { color: C.onAccent },
   chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: R.pill, borderWidth: 1, borderColor: C.line, backgroundColor: C.surface },
   chipOn: { backgroundColor: C.accent, borderColor: C.accent },
-  chipAdd: { borderStyle: 'dashed', borderColor: C.accentBright, backgroundColor: 'transparent' },
+  chipAdd: { borderStyle: 'dashed', borderColor: C.papaya, backgroundColor: 'transparent' },
   chipText: { color: C.ink, fontWeight: '600', fontSize: 14 },
   chipTextOn: { color: C.onAccent },
   btn: { backgroundColor: C.accent, borderRadius: R.pill, paddingVertical: 13, paddingHorizontal: 18, alignItems: 'center' },
