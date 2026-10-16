@@ -239,7 +239,7 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
             </View>
           ) : null}
 
-          {showInputs ? (
+          {showInputs && !weighing && !warming ? (
             <View style={st.duo}>
               <View style={st.bigField}>
                 <Text style={st.tileLabel}>GRINDER READS</Text>
@@ -294,8 +294,25 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
             </View>
           ) : weighing ? (
             <View style={st.weighBox}>
-              <Text style={st.h2}>WEIGH THE DOSE FIRST</Text>
-              <Text style={st.small}>Grind on <Text style={st.strong}>{f.doserTime ? `${fd(num(f.doserTime))} s` : 'your doser time'}</Text> and weigh it. Target {fmt(run.dose)} g.</Text>
+              <Text style={st.h2}>STEP 1 · WEIGH THE DOSE</Text>
+              <Text style={st.small}>Grind on the doser time below and weigh it. Target {fmt(run.dose)} g. The shot comes next.</Text>
+              {showInputs ? (
+                <View style={st.duo}>
+                  <View style={st.smallField}>
+                    <Text style={st.tileLabel}>GRINDER READS</Text>
+                    <TextInput value={f.setting} onChangeText={set('setting')} keyboardType="decimal-pad" placeholder="6.5" placeholderTextColor={C.faint}
+                      style={st.midInput} accessibilityLabel="Grinder setting" />
+                  </View>
+                  <View style={st.smallField}>
+                    <Text style={st.tileLabel}>DOSER (S)</Text>
+                    <TextInput value={f.doserTime} onChangeText={set('doserTime')} keyboardType="decimal-pad" placeholder="–" placeholderTextColor={C.faint}
+                      style={st.midInput} accessibilityLabel="Doser time in seconds" />
+                  </View>
+                </View>
+              ) : (
+                <Text style={st.small}>Grinder <Text style={st.strong}>{f.setting}</Text> · doser <Text style={st.strong}>{f.doserTime ? `${fd(num(f.doserTime))} s` : '–'}</Text></Text>
+              )}
+              <Text style={[st.tileLabel, { textAlign: 'center' }]}>DOSE WEIGHED</Text>
               <View style={[st.timeRow, { justifyContent: 'center' }]}>
                 <TextInput value={wIn} onChangeText={v => { setWIn(v); setErr(''); }} keyboardType="decimal-pad" inputMode="decimal"
                   placeholder={fmt(run.dose)} placeholderTextColor={C.faint} style={st.timeInput} accessibilityLabel="Dose weight in grams" selectTextOnFocus />
@@ -309,6 +326,7 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
           ) : (
           <>
           {weigh.done ? <Text style={st.doseOk}>✓ Dose {fmt(weigh.done.g)} g on {fd(weigh.done.d)} s</Text> : null}
+          {weigh.done ? <Text style={st.h2}>STEP 2 · PULL THE SHOT</Text> : null}
           <Pressable style={st.timeBox} onPress={() => timeRef.current && timeRef.current.focus()} accessibilityLabel="Shot time in seconds">
             <Text style={st.tileLabel}>SHOT TIME (SECONDS)</Text>
             <View style={st.timeRow}>
@@ -422,6 +440,8 @@ const st = StyleSheet.create({
   h2: { color: C.ink, fontSize: 14, fontWeight: '800', letterSpacing: 0.8 },
   strong: { color: C.ink, fontWeight: '800' },
   weighBox: { backgroundColor: C.accentSoft, borderRadius: R.md, borderWidth: 1, borderColor: C.accentLine, padding: S.lg, gap: S.sm, alignItems: 'stretch' },
+  smallField: { flex: 1, backgroundColor: C.surface, borderRadius: R.md, borderWidth: 1, borderColor: C.accentLine, padding: S.sm, alignItems: 'center', gap: 2 },
+  midInput: { color: C.ink, fontSize: 28, fontWeight: '800', minWidth: 70, textAlign: 'center', paddingVertical: 0 },
   unitBig: { color: C.muted, fontSize: 28, fontWeight: '700' },
   fixMsg: { color: C.teal, fontSize: 16, fontWeight: '700', textAlign: 'center' },
   skip: { color: C.faint, fontSize: 14, textAlign: 'center', marginTop: 2 },
