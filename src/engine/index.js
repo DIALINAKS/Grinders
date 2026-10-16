@@ -29,6 +29,7 @@ export const RULE_DEFAULTS = {
   presets: '',       // saved doser presets, e.g. "5.8, 6.0, 6.2"
   doserStep: 0.1,    // smallest step the doser timer can be set in: 0.1 or 0.01 s
   doserNotch: '',    // optional override: doser seconds per subdivision finer; blank = learned
+  purge: 3,          // doses to grind off after a grind change, so old grind left in the grinder doesn't skew the test shot
   // House rules: OFF by default. Only used when a manager switches them on, and always
   // labelled as a house rule, never as a measured or verified figure.
   houseRules: false,

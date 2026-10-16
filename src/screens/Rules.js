@@ -53,6 +53,10 @@ export default function Rules({ grinder, onChange, readOnly, onGauge, onRecalibr
           <Label>Doser timer steps</Label>
           <Segmented disabled={readOnly} options={[{ value: 0.1, label: '0.1 s' }, { value: 0.01, label: '0.01 s' }]} value={doserStepOf(r)} onChange={set('doserStep')} />
           <Body muted style={{ fontSize: 12 }}>Doser times are given in steps your grinder can be set to. With 0.1 s steps, a drop within about 0.1–0.2 g of the dose can't be corrected any closer.</Body>
+          <Label>Doses to clear after a grind change</Label>
+          <Segmented disabled={readOnly} options={[0, 1, 2, 3, 4].map(n => ({ value: n, label: n === 0 ? 'Off' : String(n) }))}
+            value={Number.isFinite(Number(r.purge)) ? Number(r.purge) : 3} onChange={set('purge')} />
+          <Body muted style={{ fontSize: 12 }}>Coffee ground at the old setting stays in the grinder. After every grind change, Dial In asks the barista to grind off this many doses before weighing and pulling the test shot.</Body>
         </View>
       </Card>
 

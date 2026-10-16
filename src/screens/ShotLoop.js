@@ -19,7 +19,7 @@ const str = v => (v == null || v === '' ? '' : String(v));
  * The dose stays fixed for the whole run. Changing it starts a new run.
  */
 export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, coffeeShots, grinderShots, first, blocked, simple,
-  onRecord, onToggleExclude, onSave, onRestart, onStop, onChangeRules, onSeePlans }) {
+  onRecord, onDoseCheck, onToggleExclude, onSave, onRestart, onStop, onChangeRules, onSeePlans }) {
   const rules = rulesFor(grinder);
   const M = dialMarks(rules);
   const gauge = !simple && grinder.gauge === true;
@@ -54,7 +54,23 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
   const [err, setErr] = useState('');
   const [refine, setRefine] = useState(false);
   const [sureRestart, setSureRestart] = useState(false);
-  useEffect(() => { setF(fresh()); setErr(''); setRefine(false); setConfirmed(false); setCustom(false); setWhy(false); setSureRestart(false); }, [runShots.length, run.id]);
+  // Weigh the dose before the shot whenever the grind has moved since the last weighed drop
+  // (always on the first shot of a run): a new grind drops a different weight on the same doser time.
+  const needsWeigh = setting => !lastDrop || num(lastDrop.setting) === null || Math.abs(num(lastDrop.setting) - num(setting)) > 1e-6;
+  const [weigh, setWeigh] = useState(() => ({ need: needsWeigh(fresh().setting), done: null }));
+  // After a grind change, old grind still sits in the grinder: grind off a few doses before weighing and the test shot.
+  const purgeN = Number.isFinite(Number(rules.purge)) ? Math.max(0, Math.round(Number(rules.purge))) : 3;
+  const prevSetting = last ? num(last.setting) : num(run.current ?? (first ? first.setting : grinder.lastSetting));
+  const needsPurge = setting => purgeN > 0 && num(setting) !== null && prevSetting !== null && Math.abs(num(setting) - prevSetting) > 1e-6;
+  const [purged, setPurged] = useState(0);
+  const [purgeSkip, setPurgeSkip] = useState(false);
+  const [wIn, setWIn] = useState('');
+  const [wMsg, setWMsg] = useState('');
+  useEffect(() => {
+    const nf = fresh();
+    setF(nf); setErr(''); setRefine(false); setConfirmed(false); setCustom(false); setWhy(false); setSureRestart(false);
+    setWeigh({ need: needsWeigh(nf.setting), done: null }); setWIn(''); setWMsg(''); setPurged(0); setPurgeSkip(false);
+  }, [runShots.length, run.id]);
   const set = k => v => setF(p => ({ ...p, [k]: v }));
   const timeRef = useRef(null);
   const bumpTime = d => setF(p => {
@@ -65,7 +81,26 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
   const showChange = ready && !inBand;                       // a recommendation to act on
   const showInputs = !showChange || custom;                  // first shot, no recommendation yet, or barista set something else
   const showShot = !(inBand && !refine) && (!showChange || confirmed || custom);
-  const groundG = f.doseWrong ? num(f.ground) : run.dose;
+  const groundG = f.doseWrong ? num(f.ground) : weigh.done ? weigh.done.g : run.dose;
+  const purging = !blocked && !purgeSkip && needsPurge(f.setting) && purged < purgeN;
+  const weighing = !purging && weigh.need && !weigh.done && !blocked;
+
+  // weigh a drop: within tolerance → on to the shot; otherwise correct the doser and weigh again
+  const checkWeight = () => {
+    const sNow = num(f.setting), d = num(f.doserTime), g = num(wIn);
+    if (sNow === null) return setErr('Enter what the grinder reads.');
+    const de = checkDialEntry(sNow, M); if (de) return setErr(de);
+    if (d === null || d <= 0) return setErr('Enter the doser time.');
+    if (g === null || g <= 0) return setErr('Enter what the dose weighed.');
+    setErr('');
+    if (onDoseCheck) onDoseCheck({ setting: sNow, doserTime: d, ground: g, roomTemp: gauge ? num(f.roomTemp) : null, humidity: gauge ? num(f.humidity) : null, workload: fan ? Number(f.workload) : null });
+    const fix = doserFor(run.dose, g, d, rules);
+    const within = Math.abs(g - run.dose) <= run.tol + 1e-9 || !fix || Math.abs(fix.seconds - d) < 1e-6;
+    if (within) { setWeigh(w => ({ ...w, done: { g, d } })); setWMsg(''); return; }
+    setF(p => ({ ...p, doserTime: fix.seconds.toFixed(dDec) }));
+    setWIn('');
+    setWMsg(`${fmt(g)} g is ${g > run.dose ? 'over' : 'under'} ${fmt(run.dose)} g. Set the doser to ${fd(fix.seconds)} s and weigh again.`);
+  };
 
   const record = () => {
     const s = num(f.setting);
@@ -86,7 +121,7 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
     // a wrong drop is topped up or taken out to the run dose, so the shot stays a clean grind reading;
     // the weighed drop teaches the doser time for next time
     const shot = {
-      setting: s, doserTime: num(f.doserTime), dose: run.dose, ground: groundG, toppedUp: f.doseWrong, yield: run.yield, time: num(f.time),
+      setting: s, doserTime: num(f.doserTime), dose: run.dose, ground: groundG, toppedUp: !!f.doseWrong, yield: run.yield, time: num(f.time),
       roomTemp: gauge ? num(f.roomTemp) : null, humidity: gauge ? num(f.humidity) : null,
       workload: fan ? Number(f.workload) : null, taste: simple ? '' : f.taste,
       target: mid, targetLo: run.tLo, targetHi: run.tHi, recSetting, predTime, doseOff: false, role: 'test',
@@ -194,6 +229,41 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
             </View>
           ) : null}
 
+          {purging ? (
+            <View style={st.weighBox}>
+              <Text style={st.h2}>CLEAR THE OLD GRIND</Text>
+              <Text style={st.small}>The grinder still holds coffee ground at {prevSetting}. Grind off {purgeN} dose{purgeN === 1 ? '' : 's'} on <Text style={st.strong}>{f.setting}</Text> and bin {purgeN === 1 ? 'it' : 'them'}, so the test shot is all fresh grind.</Text>
+              <View style={st.purgeRow}>
+                {Array.from({ length: purgeN }, (_, i) => {
+                  const on = i < purged;
+                  return (
+                    <Pressable key={i} onPress={() => setPurged(on ? i : i + 1)} style={[st.purgeDot, on && st.purgeOn]}
+                      accessibilityRole="button" accessibilityLabel={`Dose ${i + 1} ${on ? 'cleared' : 'not cleared yet'}`}>
+                      <Text style={[st.purgeText, on && { color: C.onTeal }]}>{on ? '✓' : i + 1}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <Button title={purged + 1 >= purgeN ? 'Done, grinder cleared' : `Dose ${purged + 1} ground off`} onPress={() => setPurged(n => n + 1)} />
+              <Pressable onPress={() => setPurgeSkip(true)} hitSlop={6}><Text style={st.skip}>Skip, already cleared</Text></Pressable>
+            </View>
+          ) : weighing ? (
+            <View style={st.weighBox}>
+              <Text style={st.h2}>WEIGH THE DOSE FIRST</Text>
+              <Text style={st.small}>Grind on <Text style={st.strong}>{f.doserTime ? `${fd(num(f.doserTime))} s` : 'your doser time'}</Text> and weigh it. Target {fmt(run.dose)} g.</Text>
+              <View style={[st.timeRow, { justifyContent: 'center' }]}>
+                <TextInput value={wIn} onChangeText={v => { setWIn(v); setErr(''); }} keyboardType="decimal-pad" inputMode="decimal"
+                  placeholder={fmt(run.dose)} placeholderTextColor={C.faint} style={st.timeInput} accessibilityLabel="Dose weight in grams" selectTextOnFocus />
+                <Text style={st.unitBig}>g</Text>
+              </View>
+              {wMsg ? <Text style={st.fixMsg}>{wMsg}</Text> : null}
+              {err ? <Text style={st.err}>{err}</Text> : null}
+              <Button title="Check dose" onPress={checkWeight} />
+              <Pressable onPress={() => setWeigh(w => ({ ...w, need: false }))} hitSlop={6}><Text style={st.skip}>Skip, I've already weighed it</Text></Pressable>
+            </View>
+          ) : (
+          <>
+          {weigh.done ? <Text style={st.doseOk}>✓ Dose {fmt(weigh.done.g)} g on {fd(weigh.done.d)} s</Text> : null}
           <Pressable style={st.timeBox} onPress={() => timeRef.current && timeRef.current.focus()} accessibilityLabel="Shot time in seconds">
             <Text style={st.tileLabel}>SHOT TIME (SECONDS)</Text>
             <View style={st.timeRow}>
@@ -212,7 +282,7 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
           ) : null}
 
           {/* dose: only asked when it went wrong */}
-          {!f.doseWrong ? (
+          {weigh.done ? null : !f.doseWrong ? (
             <Pressable onPress={() => setF(p => ({ ...p, doseWrong: true }))} hitSlop={6}>
               <Text style={st.why}>Dose wasn't {fmt(run.dose)} g?</Text>
             </Pressable>
@@ -251,6 +321,8 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
 
           {err ? <Text style={st.err}>{err}</Text> : null}
           <Button title="Record shot" onPress={record} disabled={!!blocked} />
+          </>
+          )}
         </Card>
       ) : null}
 
@@ -310,6 +382,17 @@ const st = StyleSheet.create({
   h: { color: C.ink, fontSize: 15, fontWeight: '800', letterSpacing: 0.8 },
   small: { color: C.muted, fontSize: 14, lineHeight: 20 },
   err: { color: C.bad, fontSize: 14 },
+  h2: { color: C.ink, fontSize: 14, fontWeight: '800', letterSpacing: 0.8 },
+  strong: { color: C.ink, fontWeight: '800' },
+  weighBox: { backgroundColor: C.accentSoft, borderRadius: R.md, borderWidth: 1, borderColor: C.accentLine, padding: S.lg, gap: S.sm, alignItems: 'stretch' },
+  unitBig: { color: C.muted, fontSize: 28, fontWeight: '700' },
+  fixMsg: { color: C.teal, fontSize: 16, fontWeight: '700', textAlign: 'center' },
+  skip: { color: C.faint, fontSize: 14, textAlign: 'center', marginTop: 2 },
+  doseOk: { color: C.good, fontSize: 15, fontWeight: '700' },
+  purgeRow: { flexDirection: 'row', justifyContent: 'center', gap: S.md, marginVertical: 4 },
+  purgeDot: { width: 56, height: 56, borderRadius: 28, borderWidth: 1.5, borderColor: C.teal, alignItems: 'center', justifyContent: 'center' },
+  purgeOn: { backgroundColor: C.teal },
+  purgeText: { color: C.teal, fontSize: 20, fontWeight: '800' },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   trio: { flexDirection: 'row', gap: S.sm },
   mini: { flex: 1, backgroundColor: C.surface2, borderRadius: R.md, padding: S.sm, alignItems: 'center', gap: 2 },
