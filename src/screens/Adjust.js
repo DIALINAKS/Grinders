@@ -5,7 +5,7 @@ import { Card, Button, Body, Note, Label, Segmented } from '../components/ui';
 import { Stepper } from '../components/visuals';
 import Recommendation from '../components/Recommendation';
 import { coffeeLine } from '../components/CoffeeForm';
-import { recommend, rulesFor, dialMarks, checkDialEntry, fmt, fmtSec, num, redialCheck } from '../engine';
+import { recommend, rulesFor, dialMarks, checkDialEntry, fmt, fmtSec, num, redialCheck, warmUpReason, warmUpText } from '../engine';
 
 const LOADS = [{ value: 0, label: 'Quiet' }, { value: 1, label: 'Steady' }, { value: 2, label: 'Busy' }];
 const str = v => (v == null || v === '' ? '' : String(v));
@@ -15,7 +15,7 @@ const when = ts => new Date(ts).toLocaleDateString(undefined, { day: 'numeric', 
  * Mode 2 · Adjust an existing coffee. Uses the coffee's saved calibration on THIS grinder,
  * the grinder's confirmed position and today's room to predict the setting before the first shot.
  */
-export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, grinderShots, maintain, simple, onStart, onCancel, onNewCoffee, onRedial, onSetPosition }) {
+export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, grinderShots, maintain, simple, onStart, onCancel, onNewCoffee, onRedial, onSetPosition, onPurged }) {
   const rules = rulesFor(grinder);
   const M = dialMarks(rules);
   const gauge = !simple && grinder.gauge === true;
@@ -34,12 +34,20 @@ export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, gri
   // the barista reads the dial and types it: no assumed position, so a moved grinder is always caught
   const current = num(pos);
 
+  // warm-up before any change: first dial-in of the day, >10 min idle, or last shot out of range
+  const purgeN = Number.isFinite(Number(rules.purge)) ? Math.max(0, Math.round(Number(rules.purge))) : 3;
+  const [warmReason] = useState(() => (purgeN > 0 ? warmUpReason(grinderShots, grinder.purgedAt) : null));
+  const [warmCount, setWarmCount] = useState(0);
+  const [warmed, setWarmed] = useState(false);
+  const afterPos = () => setStep(askNow ? 'room' : 'predict');
+  const finishWarm = () => { setWarmed(true); if (onPurged) onPurged(); afterPos(); };
   const pick = id => { setCid(id); setPos(''); setErr(''); setStep(afterCoffee); };
   const confirmPos = () => {
     const s = num(pos); if (s === null) return setErr('Enter what the grinder reads now.');
     const de = checkDialEntry(s, M); if (de) return setErr(de);
     if (onSetPosition) onSetPosition(s); // remember the grinder's real position
-    setErr(''); setStep(askNow ? 'room' : 'predict');
+    setErr('');
+    if (warmReason && !warmed) setStep('warmup'); else afterPos();
   };
 
   const r = useMemo(() => (step === 'predict' && cal ? recommend({
@@ -58,6 +66,7 @@ export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, gri
       recEntry: r && r.status === 'ready' ? num(r.dial.entry) : null, // what was recommended, to tell later whether it was followed
       predTime: usePred ? Math.round(r.predictedTime * 10) / 10 : (r && r.status === 'ready' ? Math.round(r.ifUnchanged * 10) / 10 : null),
       roomTemp: room.roomTemp, humidity: room.humidity, workload: room.workload,
+      warmedUp: warmed || !warmReason,
     });
   };
 
@@ -99,6 +108,28 @@ export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, gri
           {err ? <Text style={{ color: C.bad }}>{err}</Text> : null}
           <Button title="Next" onPress={confirmPos} />
           <Button title="‹ Choose another coffee" kind="link" onPress={() => setStep('coffee')} />
+        </Card>
+      ) : null}
+
+      {step === 'warmup' ? (
+        <Card>
+          <Text style={st.h}>RUN {purgeN} SHOT{purgeN === 1 ? '' : 'S'} FIRST</Text>
+          <Body muted>{`${warmUpText(warmReason, purgeN, grinder.name)} Keep the grinder on ${str(current)} for now. These shots aren't logged.`}</Body>
+          <View style={st.purgeRow}>
+            {Array.from({ length: purgeN }, (_, i) => {
+              const on = i < warmCount;
+              return (
+                <Pressable key={i} onPress={() => setWarmCount(on ? i : i + 1)} style={[st.purgeDot, on && st.purgeOn]}
+                  accessibilityRole="button" accessibilityLabel={`Shot ${i + 1} ${on ? 'run' : 'not run yet'}`}>
+                  <Text style={[st.purgeText, on && { color: C.onTeal }]}>{on ? '✓' : i + 1}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Button title={warmCount + 1 >= purgeN ? `Done, ${purgeN} shot${purgeN === 1 ? '' : 's'} run` : `Shot ${warmCount + 1} run`}
+            onPress={() => (warmCount + 1 >= purgeN ? finishWarm() : setWarmCount(n => n + 1))} />
+          <Pressable onPress={finishWarm} hitSlop={6}><Text style={st.skip}>Skip, already done</Text></Pressable>
+          <Button title="‹ Back" kind="link" onPress={() => setStep('position')} />
         </Card>
       ) : null}
 
@@ -188,6 +219,11 @@ function Fact({ label, value, strong }) {
 
 const st = StyleSheet.create({
   h: { color: C.ink, fontSize: 15, fontWeight: '800', letterSpacing: 0.8 },
+  purgeRow: { flexDirection: 'row', justifyContent: 'center', gap: S.md, marginVertical: 4 },
+  purgeDot: { width: 56, height: 56, borderRadius: 28, borderWidth: 1.5, borderColor: C.teal, alignItems: 'center', justifyContent: 'center' },
+  purgeOn: { backgroundColor: C.teal },
+  purgeText: { color: C.teal, fontSize: 20, fontWeight: '800' },
+  skip: { color: C.faint, fontSize: 14, textAlign: 'center', marginTop: 2 },
   kicker: { color: C.muted, fontSize: 11, fontWeight: '800', letterSpacing: 1 },
   coffee: { color: C.white, fontSize: 22, fontWeight: '800' },
   small: { color: C.muted, fontSize: 13 },

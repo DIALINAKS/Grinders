@@ -4,7 +4,7 @@ import { C, S, R } from '../theme';
 import { Card, Label, Segmented, Note, Button } from '../components/ui';
 import { ShotsChart, Stepper, Pill } from '../components/visuals';
 import Recommendation from '../components/Recommendation';
-import { recommend, rulesFor, dialMarks, checkDialEntry, fmt, num, checkShot, stepResponse, doserFor, dropped, doserStepOf, doserDecimals, fmtDoser } from '../engine';
+import { recommend, rulesFor, dialMarks, checkDialEntry, fmt, num, checkShot, stepResponse, doserFor, dropped, doserStepOf, doserDecimals, fmtDoser, warmUpReason, warmUpText } from '../engine';
 
 const LOADS = [{ value: 0, label: 'Quiet' }, { value: 1, label: 'Steady' }, { value: 2, label: 'Busy' }];
 const TASTES = [{ value: 'sour', label: 'Sour' }, { value: 'balanced', label: 'Balanced' }, { value: 'bitter', label: 'Bitter' }];
@@ -19,7 +19,7 @@ const str = v => (v == null || v === '' ? '' : String(v));
  * The dose stays fixed for the whole run. Changing it starts a new run.
  */
 export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, coffeeShots, grinderShots, first, blocked, simple,
-  onRecord, onDoseCheck, onToggleExclude, onSave, onRestart, onStop, onChangeRules, onSeePlans }) {
+  onRecord, onDoseCheck, onPurged, onToggleExclude, onSave, onRestart, onStop, onChangeRules, onSeePlans }) {
   const rules = rulesFor(grinder);
   const M = dialMarks(rules);
   const gauge = !simple && grinder.gauge === true;
@@ -63,6 +63,13 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
   const prevSetting = last ? num(last.setting) : num(run.current ?? (first ? first.setting : grinder.lastSetting));
   const needsPurge = setting => purgeN > 0 && num(setting) !== null && prevSetting !== null && Math.abs(num(setting) - prevSetting) > 1e-6;
   const [purged, setPurged] = useState(0);
+  // Warm-up before the first change of a session: first dial-in of the day, >10 min idle, or last shot out of range.
+  // Asked once, at the start of a run, unless the Adjust screen already did it.
+  const [warm, setWarm] = useState(() => {
+    const reason = !last && !(first && first.warmedUp) && purgeN > 0 ? warmUpReason(grinderShots, grinder.purgedAt) : null;
+    return { reason, count: 0, done: !reason };
+  });
+  const finishWarm = () => { setWarm(w => ({ ...w, done: true })); if (onPurged) onPurged(); };
   const [purgeSkip, setPurgeSkip] = useState(false);
   const [wIn, setWIn] = useState('');
   const [wMsg, setWMsg] = useState('');
@@ -82,8 +89,9 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
   const showInputs = !showChange || custom;                  // first shot, no recommendation yet, or barista set something else
   const showShot = !(inBand && !refine) && (!showChange || confirmed || custom);
   const groundG = num(f.ground);   // the dose weighed into the basket for this shot
-  const purging = !blocked && !purgeSkip && needsPurge(f.setting) && purged < purgeN;
-  const weighing = !purging && weigh.need && !weigh.done && !blocked;
+  const warming = !blocked && !warm.done;
+  const purging = !warming && !blocked && !purgeSkip && needsPurge(f.setting) && purged < purgeN;
+  const weighing = !warming && !purging && weigh.need && !weigh.done && !blocked;
 
   // weigh a drop: within tolerance → on to the shot; otherwise correct the doser and weigh again
   const checkWeight = () => {
@@ -247,7 +255,26 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
             </View>
           ) : null}
 
-          {purging ? (
+          {warming ? (
+            <View style={st.weighBox}>
+              <Text style={st.h2}>RUN {purgeN} SHOT{purgeN === 1 ? '' : 'S'} FIRST</Text>
+              <Text style={st.small}>{warmUpText(warm.reason, purgeN, grinder.name)} These shots aren't logged.</Text>
+              <View style={st.purgeRow}>
+                {Array.from({ length: purgeN }, (_, i) => {
+                  const on = i < warm.count;
+                  return (
+                    <Pressable key={i} onPress={() => setWarm(w => ({ ...w, count: on ? i : i + 1 }))} style={[st.purgeDot, on && st.purgeOn]}
+                      accessibilityRole="button" accessibilityLabel={`Shot ${i + 1} ${on ? 'run' : 'not run yet'}`}>
+                      <Text style={[st.purgeText, on && { color: C.onTeal }]}>{on ? '✓' : i + 1}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <Button title={warm.count + 1 >= purgeN ? `Done, ${purgeN} shot${purgeN === 1 ? '' : 's'} run` : `Shot ${warm.count + 1} run`}
+                onPress={() => (warm.count + 1 >= purgeN ? finishWarm() : setWarm(w => ({ ...w, count: w.count + 1 })))} />
+              <Pressable onPress={finishWarm} hitSlop={6}><Text style={st.skip}>Skip, already done</Text></Pressable>
+            </View>
+          ) : purging ? (
             <View style={st.weighBox}>
               <Text style={st.h2}>CLEAR THE OLD GRIND</Text>
               <Text style={st.small}>The grinder still holds coffee ground at {prevSetting}. Grind off {purgeN} dose{purgeN === 1 ? '' : 's'} on <Text style={st.strong}>{f.setting}</Text> and bin {purgeN === 1 ? 'it' : 'them'}, so the test shot is all fresh grind.</Text>

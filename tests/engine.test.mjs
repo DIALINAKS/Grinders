@@ -1,6 +1,6 @@
 // Run with: npm test   (node tests/engine.test.mjs)
 // Checks the Dial In calibration engine (v2).
-import { roomRate, toEntry, checkShot, stepResponse, doserFor, roundDoser, doserStepOf, recommend, rulesFor, fromDial, fmtDial, checkDialEntry, reconcileGrinders, usageText, insights, redialCheck } from '../src/engine/index.js';
+import { roomRate, toEntry, checkShot, stepResponse, doserFor, roundDoser, doserStepOf, recommend, rulesFor, fromDial, fmtDial, checkDialEntry, reconcileGrinders, usageText, insights, redialCheck, warmUpReason } from '../src/engine/index.js';
 import assert from 'node:assert/strict';
 
 const mazzer = rulesFor({ model: 'Mazzer' });          // 10 subdivisions, finer = lower number, no house rules
@@ -348,6 +348,20 @@ t('big shifts ask for a re-dial, small ones do not', () => {
   assert.ok(/busy/.test(redialCheck(cal, { workload: 2 }, rulesFor({ model: 'Compak E6' }))));
   assert.equal(redialCheck(cal, { workload: 2 }, mythos), null);           // temperature-controlled burrs ignore workload
   assert.equal(redialCheck({ roomTemp: null }, { roomTemp: 30 }, mazzer), null); // never compares a missing reading
+});
+
+t('warm-up: first dial-in of the day, over 10 minutes idle, or last shot out of range', () => {
+  const now = Date.parse('2026-10-16T09:00:00Z');
+  const at = m => new Date(now - m * 60000).toISOString();
+  const shot = (m, time) => ({ setting: 6.5, time, targetLo: 28, targetHi: 32, ts: at(m) });
+  assert.equal(warmUpReason([], null, now).kind, 'first');                                   // nothing logged
+  assert.equal(warmUpReason([{ ...shot(0, 30), ts: '2026-10-15T17:00:00Z' }], null, now).kind, 'first'); // only yesterday
+  assert.equal(warmUpReason([shot(25, 30)], null, now).kind, 'idle');                         // 25 min since last shot
+  assert.equal(warmUpReason([shot(5, 35)], null, now).kind, 'out');                            // last shot too slow
+  assert.equal(warmUpReason([shot(5, 30)], null, now), null);                                  // recent and in range
+  assert.equal(warmUpReason([shot(5, 35)], at(2), now), null);                                 // warmed up since that shot
+  assert.equal(warmUpReason([shot(25, 30)], at(3), now), null);                                // warmed up 3 min ago
+  assert.equal(warmUpReason([{ kind: 'dose', ground: 18, ts: at(1) }, shot(25, 30)], null, now).kind, 'idle'); // dose checks aren't shots
 });
 
 console.log(`All ${passed} engine tests passed.`);

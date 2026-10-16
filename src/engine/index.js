@@ -732,3 +732,34 @@ export function redialCheck(cal, now, rules) {
   if (rules && rules.burr === 'fan' && w0 !== null && w1 !== null && Math.abs(w1 - w0) >= REDIAL.workload) why.push(`${LOADS[w0] || 'quiet'} → ${LOADS[w1] || 'busy'}`.toLowerCase());
   return why.length ? why.join(', ') : null;
 }
+
+
+/* ---------------- warm-up before a change ----------------
+   Before the first change of a session, the barista runs a few shots through the grinder so the
+   reading isn't skewed by stale grind or cold burrs. Asked for when:
+     - it's the first dial-in of the day on this grinder,
+     - more than IDLE_MIN minutes have passed since the last shot (or warm-up) on it, or
+     - the last shot on it ran outside its target band. */
+export const IDLE_MIN = 10;
+export function warmUpReason(shots, purgedAt, nowMs = Date.now(), idleMin = IDLE_MIN) {
+  const ex = (shots || []).filter(s => ok(num(s.time)) && s.ts).sort((a, b) => (a.ts < b.ts ? -1 : 1));
+  const last = ex[ex.length - 1];
+  const lastT = last ? Date.parse(last.ts) : NaN;
+  const pT = purgedAt ? Date.parse(purgedAt) : NaN;
+  const latest = Math.max(isNaN(lastT) ? -Infinity : lastT, isNaN(pT) ? -Infinity : pT);
+  if (!isFinite(latest) || new Date(latest).toDateString() !== new Date(nowMs).toDateString()) return { kind: 'first' };
+  const mins = (nowMs - latest) / 60000;
+  if (mins > idleMin) return { kind: 'idle', minutes: Math.round(mins) };
+  if (last && (isNaN(pT) || pT < lastT)) {
+    const lo = num(last.targetLo), hi = num(last.targetHi), t = num(last.time);
+    if (ok(lo) && ok(hi) && (t < lo || t > hi)) return { kind: 'out', time: t, lo, hi };
+  }
+  return null;
+}
+export function warmUpText(reason, n, grinderName) {
+  const run = `Run ${n} shot${n === 1 ? '' : 's'} through before changing anything`;
+  if (!reason) return '';
+  if (reason.kind === 'first') return `First dial-in of the day on ${grinderName}. ${run}: it warms the grinder and clears out yesterday's grind.`;
+  if (reason.kind === 'idle') return `${reason.minutes} minutes since the last shot on ${grinderName}. ${run}, so the next reading is a fair one.`;
+  return `The last shot ran ${fmt(reason.time)} s, outside ${fmt(reason.lo, 0)}–${fmt(reason.hi, 0)} s. ${run}, so the next reading is a fair one.`;
+}
