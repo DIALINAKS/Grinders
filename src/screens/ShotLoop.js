@@ -81,7 +81,7 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
   const showChange = ready && !inBand;                       // a recommendation to act on
   const showInputs = !showChange || custom;                  // first shot, no recommendation yet, or barista set something else
   const showShot = !(inBand && !refine) && (!showChange || confirmed || custom);
-  const groundG = f.doseWrong ? num(f.ground) : weigh.done ? weigh.done.g : run.dose;
+  const groundG = num(f.ground);   // the dose weighed into the basket for this shot
   const purging = !blocked && !purgeSkip && needsPurge(f.setting) && purged < purgeN;
   const weighing = !purging && weigh.need && !weigh.done && !blocked;
 
@@ -96,7 +96,7 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
     if (onDoseCheck) onDoseCheck({ setting: sNow, doserTime: d, ground: g, roomTemp: gauge ? num(f.roomTemp) : null, humidity: gauge ? num(f.humidity) : null, workload: fan ? Number(f.workload) : null });
     const fix = doserFor(run.dose, g, d, rules);
     const within = Math.abs(g - run.dose) <= run.tol + 1e-9 || !fix || Math.abs(fix.seconds - d) < 1e-6;
-    if (within) { setWeigh(w => ({ ...w, done: { g, d } })); setWMsg(''); return; }
+    if (within) { setWeigh(w => ({ ...w, done: { g, d } })); setF(p => ({ ...p, ground: String(g) })); setWMsg(''); return; }
     setF(p => ({ ...p, doserTime: fix.seconds.toFixed(dDec) }));
     setWIn('');
     setWMsg(`${fmt(g)} g is ${g > run.dose ? 'over' : 'under'} ${fmt(run.dose)} g. Set the doser to ${fd(fix.seconds)} s and weigh again.`);
@@ -106,7 +106,7 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
     const s = num(f.setting);
     if (s === null) return setErr('Enter what the grinder reads.');
     const de = checkDialEntry(s, M); if (de) return setErr(de);
-    if (f.doseWrong && groundG === null) return setErr('Enter what the dose weighed.');
+    if (groundG === null || groundG <= 0) return setErr('Enter what the dose weighed.');
     if (num(f.time) === null) return setErr('Enter the shot time.');
     if (num(f.yieldOut) === null || num(f.yieldOut) <= 0) return setErr('Enter what the shot weighed in the cup.');
     // with a gauge (detail mode), the room is part of every result: it's how the app learns this grinder
@@ -122,7 +122,7 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
     // a wrong drop is topped up or taken out to the run dose, so the shot stays a clean grind reading;
     // the weighed drop teaches the doser time for next time
     const shot = {
-      setting: s, doserTime: num(f.doserTime), dose: run.dose, ground: groundG, toppedUp: !!f.doseWrong, yield: num(f.yieldOut), time: num(f.time),
+      setting: s, doserTime: num(f.doserTime), dose: groundG, ground: groundG, toppedUp: false, yield: num(f.yieldOut), time: num(f.time),
       roomTemp: gauge ? num(f.roomTemp) : null, humidity: gauge ? num(f.humidity) : null,
       workload: fan ? Number(f.workload) : null, taste: simple ? '' : f.taste,
       target: mid, targetLo: run.tLo, targetHi: run.tHi, recSetting, predTime, doseOff: false, role: 'test',
@@ -135,6 +135,15 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
     onRecord(shot);
   };
 
+  // dose in the basket against the target: give the doser time that drops the right weight
+  const dOff = last && num(last.dose) !== null ? num(last.dose) - run.dose : 0;
+  const dFix = last && Math.abs(dOff) >= 0.05 && num(last.doserTime) > 0 ? doserFor(run.dose, num(last.dose), num(last.doserTime), rules) : null;
+  const doseTip = !dFix ? null : {
+    warn: Math.abs(dOff) > run.tol + 1e-9,
+    text: Math.abs(dFix.seconds - num(last.doserTime)) < 1e-6
+      ? `Dose was ${fmt(last.dose)} g on ${fd(last.doserTime)} s: within one doser step of ${fmt(run.dose)} g, so keep the doser on ${fd(last.doserTime)} s.`
+      : `Dose was ${fmt(last.dose)} g on ${fd(last.doserTime)} s. Set the doser to ${fd(dFix.seconds)} s to drop ${fmt(run.dose)} g.${Math.abs(dOff) > run.tol + 1e-9 ? ' This shot isn\'t used for the grind: the dose was too far out.' : ''}`,
+  };
   // shot weight in the cup against the target: tell the barista how to correct it
   const yOff = last && num(last.yield) !== null ? num(last.yield) - run.yield : 0;
   const yieldTip = last && Math.abs(yOff) >= 0.5
@@ -159,14 +168,15 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
           </View>
           <View style={st.trio}>
             <Mini label="GRINDER" value={str(last.setting)} />
-            <Mini label="DOSER" value={last.doserTime != null ? `${fd(last.doserTime)} s` : '–'} />
+            <Mini label="DOSE" value={num(last.dose) !== null ? `${fmt(last.dose)} g` : '–'} />
             <Mini label="TIME" value={`${fmt(last.time)} s`} />
             <Mini label="IN CUP" value={num(last.yield) !== null ? `${fmt(last.yield)} g` : '–'} />
           </View>
+          {doseTip ? <Note tone={doseTip.warn ? 'warn' : undefined}>{doseTip.text}</Note> : null}
           {yieldTip ? <Note tone={last.excluded ? 'warn' : undefined}>{yieldTip}</Note> : null}
           {last.excluded ? (
             <View style={{ gap: S.sm }}>
-              {yieldTip ? null : <Note tone="warn">{`Not used: ${last.excludedWhy}. Pull it again on the same setting.`}</Note>}
+              {yieldTip || (doseTip && doseTip.warn) ? null : <Note tone="warn">{`Not used: ${last.excludedWhy}. Pull it again on the same setting.`}</Note>}
               <Button title="Use it anyway" kind="secondary" onPress={() => onToggleExclude(last.id)} />
             </View>
           ) : null}
@@ -283,7 +293,8 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
           </Pressable>
 
           <View style={st.steppers}>
-            <Stepper label="SHOT WEIGHT IN CUP" unit={`g · target ${fmt(run.yield)} g`} value={f.yieldOut} onChange={set('yieldOut')} step={0.5} />
+            <Stepper label="DOSE IN" unit={`g · target ${fmt(run.dose)}`} value={f.ground} onChange={set('ground')} step={0.1} />
+            <Stepper label="SHOT OUT" unit={`g · target ${fmt(run.yield)}`} value={f.yieldOut} onChange={set('yieldOut')} step={0.5} />
           </View>
 
           {fan ? (
@@ -292,19 +303,6 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
               <Segmented options={LOADS} value={Number(f.workload)} onChange={set('workload')} />
             </View>
           ) : null}
-
-          {/* dose: only asked when it went wrong */}
-          {weigh.done ? null : !f.doseWrong ? (
-            <Pressable onPress={() => setF(p => ({ ...p, doseWrong: true }))} hitSlop={6}>
-              <Text style={st.why}>Dose wasn't {fmt(run.dose)} g?</Text>
-            </Pressable>
-          ) : (
-            <View style={st.dropBox}>
-              <Stepper label="THE DOSE WEIGHED" unit="g" value={f.ground} onChange={set('ground')} step={0.1} />
-              <Text style={st.small}>Top up or take out to {fmt(run.dose)} g, then pull the shot. Dial In corrects the doser time for next time.</Text>
-              <Button title="Dose was fine" kind="link" onPress={() => setF(p => ({ ...p, doseWrong: false, ground: str(run.dose) }))} />
-            </View>
-          )}
 
           {!simple ? (
             <>
