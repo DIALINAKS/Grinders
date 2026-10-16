@@ -43,7 +43,7 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
   const fresh = () => ({
     setting: ready ? r.dial.entry : last ? str(last.setting) : str(first ? first.setting : grinder.lastSetting),
     doserTime: ready && r.dose.seconds != null ? r.dose.seconds.toFixed(dDec) : dropFix ? dropFix.seconds.toFixed(dDec) : last ? str(last.doserTime) : str(first ? first.doserTime : ''),
-    doseWrong: false, ground: str(run.dose), time: '', taste: '',
+    doseWrong: false, ground: str(run.dose), time: '', taste: '', yieldOut: str(run.yield),
     roomTemp: str(last ? last.roomTemp : first ? first.roomTemp : ''), humidity: str(last ? last.humidity : first ? first.humidity : ''),
     workload: last ? (last.workload ?? 1) : first && first.workload != null ? first.workload : 1,
   });
@@ -108,6 +108,7 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
     const de = checkDialEntry(s, M); if (de) return setErr(de);
     if (f.doseWrong && groundG === null) return setErr('Enter what the dose weighed.');
     if (num(f.time) === null) return setErr('Enter the shot time.');
+    if (num(f.yieldOut) === null || num(f.yieldOut) <= 0) return setErr('Enter what the shot weighed in the cup.');
     // with a gauge (detail mode), the room is part of every result: it's how the app learns this grinder
     if (gauge && (num(f.roomTemp) === null || num(f.humidity) === null)) return setErr('Enter the room temperature and humidity.');
     setErr('');
@@ -121,7 +122,7 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
     // a wrong drop is topped up or taken out to the run dose, so the shot stays a clean grind reading;
     // the weighed drop teaches the doser time for next time
     const shot = {
-      setting: s, doserTime: num(f.doserTime), dose: run.dose, ground: groundG, toppedUp: !!f.doseWrong, yield: run.yield, time: num(f.time),
+      setting: s, doserTime: num(f.doserTime), dose: run.dose, ground: groundG, toppedUp: !!f.doseWrong, yield: num(f.yieldOut), time: num(f.time),
       roomTemp: gauge ? num(f.roomTemp) : null, humidity: gauge ? num(f.humidity) : null,
       workload: fan ? Number(f.workload) : null, taste: simple ? '' : f.taste,
       target: mid, targetLo: run.tLo, targetHi: run.tHi, recSetting, predTime, doseOff: false, role: 'test',
@@ -134,6 +135,11 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
     onRecord(shot);
   };
 
+  // shot weight in the cup against the target: tell the barista how to correct it
+  const yOff = last && num(last.yield) !== null ? num(last.yield) - run.yield : 0;
+  const yieldTip = last && Math.abs(yOff) >= 0.5
+    ? `Shot weighed ${fmt(last.yield)} g, target ${fmt(run.yield)} g: stop the next shot ${yOff > 0 ? 'earlier' : 'later'}, at ${fmt(run.yield)} g in the cup.${last.excluded ? ' This shot isn\'t used for the grind, so pull the next one on the same setting.' : ''} If your machine stops shots by volume, ${yOff > 0 ? 'lower' : 'raise'} its shot volume.`
+    : null;
   const verdict = s => (s.excluded ? 'set aside' : s.time > run.tHi ? 'too slow' : s.time < run.tLo ? 'too fast' : 'in range');
 
   return (
@@ -155,10 +161,12 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
             <Mini label="GRINDER" value={str(last.setting)} />
             <Mini label="DOSER" value={last.doserTime != null ? `${fd(last.doserTime)} s` : '–'} />
             <Mini label="TIME" value={`${fmt(last.time)} s`} />
+            <Mini label="IN CUP" value={num(last.yield) !== null ? `${fmt(last.yield)} g` : '–'} />
           </View>
+          {yieldTip ? <Note tone={last.excluded ? 'warn' : undefined}>{yieldTip}</Note> : null}
           {last.excluded ? (
             <View style={{ gap: S.sm }}>
-              <Note tone="warn">{`Not used: ${last.excludedWhy}. Pull it again on the same setting.`}</Note>
+              {yieldTip ? null : <Note tone="warn">{`Not used: ${last.excludedWhy}. Pull it again on the same setting.`}</Note>}
               <Button title="Use it anyway" kind="secondary" onPress={() => onToggleExclude(last.id)} />
             </View>
           ) : null}
@@ -273,6 +281,10 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
               <Pressable onPress={() => bumpTime(0.5)} style={st.timeBtn} hitSlop={6} accessibilityLabel="Half a second more"><Text style={st.timeBtnText}>+</Text></Pressable>
             </View>
           </Pressable>
+
+          <View style={st.steppers}>
+            <Stepper label="SHOT WEIGHT IN CUP" unit={`g · target ${fmt(run.yield)} g`} value={f.yieldOut} onChange={set('yieldOut')} step={0.5} />
+          </View>
 
           {fan ? (
             <View style={{ gap: 6 }}>
@@ -396,7 +408,7 @@ const st = StyleSheet.create({
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   trio: { flexDirection: 'row', gap: S.sm },
   mini: { flex: 1, backgroundColor: C.surface2, borderRadius: R.md, padding: S.sm, alignItems: 'center', gap: 2 },
-  miniVal: { color: C.ink, fontSize: 20, fontWeight: '800' },
+  miniVal: { color: C.ink, fontSize: 18, fontWeight: '800' },
   duo: { flexDirection: 'row', gap: S.md },
   bigTile: { flex: 1, backgroundColor: C.accentSoft, borderRadius: R.md, borderWidth: 1, borderColor: C.accentLine, padding: S.md, alignItems: 'center', gap: 2 },
   bigVal: { color: C.teal, fontSize: 40, fontWeight: '800' },
