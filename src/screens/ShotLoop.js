@@ -63,6 +63,9 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
   const prevSetting = last ? num(last.setting) : num(run.current ?? (first ? first.setting : grinder.lastSetting));
   const needsPurge = setting => purgeN > 0 && num(setting) !== null && prevSetting !== null && Math.abs(num(setting) - prevSetting) > 1e-6;
   const [purged, setPurged] = useState(0);
+  // decided once per shot, from the setting the app recommends, never from what's being typed:
+  // typing what the grinder reads must not swap the screen mid-entry
+  const [purgeNeed, setPurgeNeed] = useState(() => needsPurge(fresh().setting));
   // Warm-up before the first change of a session: first dial-in of the day, >10 min idle, or last shot out of range.
   // Asked once, at the start of a run, unless the Adjust screen already did it.
   const [warm, setWarm] = useState(() => {
@@ -76,7 +79,7 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
   useEffect(() => {
     const nf = fresh();
     setF(nf); setErr(''); setRefine(false); setConfirmed(false); setCustom(false); setWhy(false); setSureRestart(false);
-    setWeigh({ need: needsWeigh(nf.setting), done: null }); setWIn(''); setWMsg(''); setPurged(0); setPurgeSkip(false);
+    setWeigh({ need: needsWeigh(nf.setting), done: null }); setWIn(''); setWMsg(''); setPurged(0); setPurgeSkip(false); setPurgeNeed(needsPurge(nf.setting));
   }, [runShots.length, run.id]);
   const set = k => v => setF(p => ({ ...p, [k]: v }));
   const timeRef = useRef(null);
@@ -90,7 +93,7 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
   const showShot = !(inBand && !refine) && (!showChange || confirmed || custom);
   const groundG = num(f.ground);   // the dose weighed into the basket for this shot
   const warming = !blocked && !warm.done;
-  const purging = !warming && !blocked && !purgeSkip && needsPurge(f.setting) && purged < purgeN;
+  const purging = !warming && !blocked && !purgeSkip && purgeNeed && purged < purgeN;
   const weighing = !warming && !purging && weigh.need && !weigh.done && !blocked;
 
   // weigh a drop: within tolerance → on to the shot; otherwise correct the doser and weigh again
