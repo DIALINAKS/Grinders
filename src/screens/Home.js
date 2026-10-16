@@ -8,7 +8,7 @@ import { fmt } from '../engine';
 const when = ts => new Date(ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 
 /** Dashboard: the two operating modes, plus this grinder's saved calibrations. */
-export default function Home({ grinder, simple, items, run, runCoffee, runCount, onNew, onAdjust, onMaintain, onContinue, onGauge, onArchiveCoffee, unsaved, unsavedCoffee, onSaveUnsaved, hiddenCal, onRestoreCoffee, onUndoRecalibrate }) {
+export default function Home({ grinder, simple, anySaved, items, run, runCoffee, runCount, onNew, onAdjust, onMaintain, onContinue, onGauge, onArchiveCoffee, unsaved, unsavedCoffee, onSaveUnsaved, hiddenCal, onRestoreCoffee, onUndoRecalibrate }) {
   const [archiving, setArchiving] = useState(null); // coffee id waiting for 'Yes, archive'
   return (
     <View style={{ gap: S.lg }}>
@@ -64,10 +64,10 @@ export default function Home({ grinder, simple, items, run, runCoffee, runCount,
       <View style={st.mode}>
         <Text style={[st.kicker, { color: C.teal }]}>DURING SERVICE</Text>
         <Text style={st.modeTitle}>Maintain calibration</Text>
-        <Text style={st.modeBody}>{items.length ? 'Getting busy or warmer? Check whether the grinder needs a change.' : run ? 'Save the calibration in progress first: tap Continue above.' : 'Save a calibration first, then this unlocks.'}</Text>
-        <Pressable onPress={() => onMaintain(null)} disabled={!items.length} accessibilityRole="button"
-          style={({ pressed }) => [st.btn2, !items.length && { opacity: 0.4 }, pressed && { opacity: 0.8 }]}>
-          <Text style={st.btn2Text}>Check grinder</Text>
+        <Text style={st.modeBody}>{anySaved || items.length ? 'Getting busy or warmer? Check whether a grinder needs a change.' : run ? 'Save the calibration in progress first: tap Continue above.' : 'Save a calibration first, then this unlocks.'}</Text>
+        <Pressable onPress={() => onMaintain(null)} disabled={!(anySaved || items.length)} accessibilityRole="button"
+          style={({ pressed }) => [st.btn2, !(anySaved || items.length) && { opacity: 0.4 }, pressed && { opacity: 0.8 }]}>
+          <Text style={st.btn2Text}>Check grinders</Text>
         </Pressable>
       </View>
 

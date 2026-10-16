@@ -18,6 +18,9 @@ import Rules from './src/screens/Rules';
 import Account from './src/screens/Account';
 import ArchivePick from './src/screens/ArchivePick';
 
+// shown in the footer so we can tell which version a phone is running
+const BUILD = '16 Oct 11:20';
+
 const TABS = [
   { key: 'home', label: 'DIAL IN', icon: 'dial' },
   { key: 'history', label: 'HISTORY', icon: 'list' },
@@ -53,6 +56,10 @@ export default function App() {
   const epoch = epochShots(st, grinder);
   const coffees = grinderCoffees(st, grinder);
   const items = coffees.filter(c => !c.archived).map(c => ({ coffee: c, cal: activeCal(st, grinder, c.id) })).filter(i => i.cal);
+  // every grinder with its saved coffees, for the check (current grinder first)
+  const checkList = [grinder, ...grinders.filter(g => grinder && g.id !== grinder.id)].filter(g => g && !g.archived && (!g.sample || (grinder && g.id === grinder.id)))
+    .map(g => ({ grinder: g, items: grinderCoffees(st, g).filter(c => !c.archived).map(c => ({ coffee: c, cal: activeCal(st, g, c.id) })).filter(i => i.cal) }));
+  const anySaved = checkList.some(x => x.items.length);
   const coffeeShots = cid => epoch.filter(s => s.coffeeId === cid);
   const picked = grinder ? st.coffee[grinder.id] : null;
   const viewCoffee = coffees.find(c => c.id === picked) || coffees.find(c => !c.archived) || null;
@@ -78,7 +85,13 @@ export default function App() {
     return id;
   };
   const startRun = (r, first) => {
-    update(s => ({ ...s, run: { ...r, id: newId('r'), grinderId: grinder.id, startedAt: new Date().toISOString(), first: first || null }, coffee: { ...s.coffee, [grinder.id]: r.coffeeId } }));
+    const runId = newId('r');
+    const c = coffeeById(st, r.coffeeId);
+    // a dose weighed during the check is logged as this run's first dose check, so the doser starts from a real drop
+    const d = first && first.drop;
+    const doseRow = d ? { kind: 'dose', role: 'test', id: newId('d'), grinderId: grinder.id, grinder: grinder.name, coffeeId: r.coffeeId, bean: c ? c.name : '', runId,
+      mode: r.mode, setting: d.setting, doserTime: d.doserTime, ground: d.ground, ts: d.ts, sample: !!grinder.sample } : null;
+    update(s => ({ ...s, shots: doseRow ? [...s.shots, doseRow] : s.shots, run: { ...r, id: runId, grinderId: grinder.id, startedAt: new Date().toISOString(), first: first || null }, coffee: { ...s.coffee, [grinder.id]: r.coffeeId } }));
     setFlow({ kind: 'loop' });
   };
   const recordShot = fields => {
@@ -132,7 +145,8 @@ export default function App() {
       body = <NewCoffee grinder={grinder} coffees={st.coffees} preset={flow.preset} onCreateCoffee={createCoffee}
         onStart={r => startRun(r, null)} onCancel={() => setFlow(null)} />;
     } else if (flow && flow.kind === 'adjust') {
-      body = <Adjust grinder={grinder} items={items} startCoffeeId={flow.coffeeId} coffeeShots={coffeeShots} grinderShots={epoch}
+      body = <Adjust key={`${grinder.id}:${flow.coffeeId || ''}`} grinder={grinder} items={items} checkList={checkList}
+        onSwitch={(gid, cid) => { update(s => ({ ...s, grinderId: gid })); setFlow({ kind: 'adjust', coffeeId: cid, maintain: !!flow.maintain }); }} startCoffeeId={flow.coffeeId} coffeeShots={coffeeShots} grinderShots={epoch}
         maintain={!!flow.maintain} simple={simple} onStart={startRun} onCancel={() => setFlow(null)} onNewCoffee={() => setFlow({ kind: 'new' })}
         onRedial={(cid, cal) => setFlow({ kind: 'new', preset: { coffeeId: cid, dose: cal.dose, yield: cal.yield } })}
         onSetPosition={s => setGrinder(grinder.id, { lastSetting: s })} onPurged={cid => markWarm(cid)} />;
@@ -147,7 +161,7 @@ export default function App() {
         </Card>
       );
     } else {
-      body = <Home grinder={grinder} simple={simple} items={items} run={run} runCoffee={run ? coffeeById(st, run.coffeeId) : null} runCount={runShots.filter(x => x.time != null).length}
+      body = <Home grinder={grinder} simple={simple} anySaved={anySaved} items={items} run={run} runCoffee={run ? coffeeById(st, run.coffeeId) : null} runCount={runShots.filter(x => x.time != null).length}
         onNew={() => setFlow({ kind: 'new' })} onAdjust={cid => setFlow({ kind: 'adjust', coffeeId: cid })} onContinue={() => setFlow({ kind: 'loop' })}
         onMaintain={cid => setFlow({ kind: 'adjust', coffeeId: cid, maintain: true })}
         onGauge={v => setGrinder(grinder.id, { gauge: v })}
@@ -217,7 +231,7 @@ export default function App() {
         ) : null}
 
         {body}
-        <Text style={st_.foot}>Testing version · no payments · {usageText(st.tier, grinders, st.shots)}</Text>
+        <Text style={st_.foot}>Testing version {BUILD} · no payments · {usageText(st.tier, grinders, st.shots)}</Text>
       </ScrollView>
 
       {!recon.mustChoose ? (
