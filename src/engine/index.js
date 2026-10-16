@@ -25,7 +25,7 @@ export const RULE_DEFAULTS = {
   dir: 'lower',      // finer on this grinder is a 'lower' | 'higher' number
   burr: 'fan',       // 'fan' (workload matters) | 'controlled'
   marks: 10,         // subdivisions between numbers on the dial
-  minStep: 1,        // smallest step the barista can set, in subdivisions (1, 0.5 or 0.25)
+  minStep: 0.5,      // smallest step the barista can set, in notches (1, 0.5, 0.25 or 0.1 stepless); half notches by default
   presets: '',       // saved doser presets, e.g. "5.8, 6.0, 6.2"
   doserStep: 0.1,    // smallest step the doser timer can be set in: 0.1 or 0.01 s
   doserNotch: '',    // optional override: doser seconds per subdivision finer; blank = learned
@@ -378,7 +378,10 @@ function guided({ P, calRow, anchor, M, rules, step, lo, hi, target, dose, note,
   if (anchor && anchor.kind === 'shot' && ok(num(anchor.time)) && ok(fromDial(num(anchor.setting), M))) { s0 = fromDial(num(anchor.setting), M); t = num(anchor.time); }
   else { const lt = [...P].reverse().find(r => ok(r.setting) && ok(r.time)); if (!lt) return null; s0 = lt.setting; t = lt.time; }
   const coarser = rules.dir === 'higher' ? -1 : 1; // sign of a coarser move in dial numbers
-  const subdiv = Math.max(GUIDE_STEPS, num(rules.minStep) || 1);
+  // first step sized to the miss, so a shot just outside the band gets a small move, not a big one
+  const miss = t > hi ? t - hi : t < lo ? lo - t : 0;
+  const sized = miss <= 2 ? 0.5 : miss <= 5 ? 1 : GUIDE_STEPS;
+  const subdiv = Math.max(sized, num(rules.minStep) || 1);
   const delta = t > hi ? coarser * subdiv / M : t < lo ? -coarser * subdiv / M : 0;
   const s1 = s0 + Math.round(delta / step) * step;
   const isHold = Math.abs(s1 - s0) < step / 2;

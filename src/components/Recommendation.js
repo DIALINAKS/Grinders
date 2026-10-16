@@ -17,7 +17,7 @@ export function Basis({ r, compact }) {
         {!r.guided ? <Pill tone={CONF_TONE[r.confidence]}>Confidence: {r.confidence}</Pill> : null}
       </View>
       <Text style={st.basisText}>Based on: {r.sourceText}</Text>
-      {r.guided ? <Text style={st.note}>This grinder hasn't been measured on this coffee yet, so this is a fixed step of 2 notches, not a prediction. The next shot measures how this grinder responds.</Text>
+      {r.guided ? <Text style={st.note}>This grinder hasn't been measured on this coffee yet, so this is a cautious first step sized to how far the shot was from your range, not a prediction. The next shot measures how this grinder responds.</Text>
         : r.dial.conservative ? <Text style={st.note}>Using a house rule until this grinder is measured.</Text> : null}
       {r.tier === 'provisional' ? <Text style={st.note}>Limited data so far: confirm it with the next shot.</Text> : null}
       {r.micro ? <Text style={st.note}>Micro-adjustment: still inside your band, but your recorded shots show this change moves it clearly off {fmt(r.target, 0)} s. This is the smallest step that brings it back.</Text> : null}

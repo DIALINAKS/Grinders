@@ -95,8 +95,19 @@ t('default: a room change with no history yet is taken into account at what the 
 t('whole physical steps only: smallest step of 1 subdivision', () => {
   // 2.5 s per subdivision, 31 s against 29–30 s → 0.6 subdivision → rounds to 1
   const shots = [{ setting: 6.5, time: 26, dose: 18, yield: 36, ts: day(0) }, { setting: 6.3, time: 31, dose: 18, yield: 36, ts: day(0) }];
-  const r = recommend({ shots, rules: mazzer, now: { target: 29.5, targetLo: 29, targetHi: 30, dose: 18, yield: 36 }, anchor: { kind: 'shot', setting: 6.3, time: 31 } });
+  const r = recommend({ shots, rules: { ...mazzer, minStep: 1 }, now: { target: 29.5, targetLo: 29, targetHi: 30, dose: 18, yield: 36 }, anchor: { kind: 'shot', setting: 6.3, time: 31 } });
   assert.equal(r.dial.text, '6.4');
+  // a grinder that sets half notches gets the smaller, closer move instead
+  const half = recommend({ shots, rules: mazzer, now: { target: 29.5, targetLo: 29, targetHi: 30, dose: 18, yield: 36 }, anchor: { kind: 'shot', setting: 6.3, time: 31 } });
+  assert.equal(half.dial.text, '6.3½');
+});
+
+t('first step is sized to the miss: ½ notch just outside the band, 2 notches only when far out', () => {
+  const step = time => recommend({ shots: [{ setting: 6.5, dose: 18, yield: 36, time, ts: day(0) }], rules: mazzer, now: now0, anchor: { kind: 'shot', setting: 6.5, time } }).dial.moveShort;
+  assert.equal(step(33), '½ notch coarser');
+  assert.equal(step(36), '1 notch coarser');
+  assert.equal(step(40), '2 notches coarser');
+  assert.equal(step(26), '½ notch finer');
 });
 
 t('a missing reading is never filled in', () => {
