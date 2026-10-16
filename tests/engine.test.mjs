@@ -364,4 +364,10 @@ t('warm-up: first dial-in of the day, over 10 minutes idle, or last shot out of 
   assert.equal(warmUpReason([{ kind: 'dose', ground: 18, ts: at(1) }, shot(25, 30)], null, now).kind, 'idle'); // dose checks aren't shots
 });
 
+t('shots to run through: 2 on a Mythos One, 3 elsewhere, and a grinder's own setting wins', () => {
+  assert.equal(rulesFor({ model: 'Mythos One' }).purge, 2);
+  assert.equal(rulesFor({ model: 'Compak E6' }).purge, 3);
+  assert.equal(rulesFor({ model: 'Mythos One', rules: { purge: 1 } }).purge, 1);
+});
+
 console.log(`All ${passed} engine tests passed.`);

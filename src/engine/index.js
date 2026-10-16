@@ -46,7 +46,7 @@ export const MODELS = ['Mythos One', 'Compak E6', 'Mazzer', 'Other'];
 
 export function modelDefaults(model) {
   const n = (model || '').toLowerCase();
-  if (n.includes('mythos')) return { marks: 6, burr: 'controlled', presets: '5.8, 6.0, 6.2', doserStep: 0.1 };
+  if (n.includes('mythos')) return { marks: 6, burr: 'controlled', presets: '5.8, 6.0, 6.2', doserStep: 0.1, purge: 2 }; // low retention: 2 shots to warm up / clear
   if (n.includes('e6') || n.includes('compak')) return { burr: 'fan' };
   return {};
 }
