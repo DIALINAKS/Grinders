@@ -5,7 +5,7 @@ import { Card, Button, Body, Note, Label, Segmented } from '../components/ui';
 import { Stepper } from '../components/visuals';
 import Recommendation from '../components/Recommendation';
 import { coffeeLine } from '../components/CoffeeForm';
-import { recommend, rulesFor, dialMarks, checkDialEntry, fmt, fmtSec, num, redialCheck, warmUpReason, warmUpText } from '../engine';
+import { recommend, rulesFor, dialMarks, checkDialEntry, fmt, fmtSec, num, redialCheck, warmUpReason, warmUpText, purgedAtFor } from '../engine';
 
 const LOADS = [{ value: 0, label: 'Quiet' }, { value: 1, label: 'Steady' }, { value: 2, label: 'Busy' }];
 const str = v => (v == null || v === '' ? '' : String(v));
@@ -36,11 +36,11 @@ export default function Adjust({ grinder, items, startCoffeeId, coffeeShots, gri
 
   // warm-up before any change: first dial-in of the day, >10 min idle, or last shot out of range
   const purgeN = Number.isFinite(Number(rules.purge)) ? Math.max(0, Math.round(Number(rules.purge))) : 3;
-  const [warmReason] = useState(() => (purgeN > 0 ? warmUpReason(grinderShots, grinder.purgedAt) : null));
+  const warmReason = useMemo(() => (purgeN > 0 && cid ? warmUpReason(coffeeShots(cid), purgedAtFor(grinder, cid)) : null), [cid]);
   const [warmCount, setWarmCount] = useState(0);
   const [warmed, setWarmed] = useState(false);
   const afterPos = () => setStep(askNow ? 'room' : 'predict');
-  const finishWarm = () => { setWarmed(true); if (onPurged) onPurged(); afterPos(); };
+  const finishWarm = () => { setWarmed(true); if (onPurged) onPurged(cid); afterPos(); };
   const pick = id => { setCid(id); setPos(''); setErr(''); setStep(afterCoffee); };
   const confirmPos = () => {
     const s = num(pos); if (s === null) return setErr('Enter what the grinder reads now.');

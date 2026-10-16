@@ -4,7 +4,7 @@ import { C, S, R } from '../theme';
 import { Card, Label, Segmented, Note, Button } from '../components/ui';
 import { ShotsChart, Stepper, Pill } from '../components/visuals';
 import Recommendation from '../components/Recommendation';
-import { recommend, rulesFor, dialMarks, checkDialEntry, fmt, num, checkShot, stepResponse, doserFor, dropped, doserStepOf, doserDecimals, fmtDoser, warmUpReason, warmUpText } from '../engine';
+import { recommend, rulesFor, dialMarks, checkDialEntry, fmt, num, checkShot, stepResponse, doserFor, dropped, doserStepOf, doserDecimals, fmtDoser, warmUpReason, warmUpText, purgedAtFor } from '../engine';
 
 const LOADS = [{ value: 0, label: 'Quiet' }, { value: 1, label: 'Steady' }, { value: 2, label: 'Busy' }];
 const TASTES = [{ value: 'sour', label: 'Sour' }, { value: 'balanced', label: 'Balanced' }, { value: 'bitter', label: 'Bitter' }];
@@ -66,7 +66,7 @@ export default function ShotLoop({ grinder, coffee, run, runShots: allRunRows, c
   // Warm-up before the first change of a session: first dial-in of the day, >10 min idle, or last shot out of range.
   // Asked once, at the start of a run, unless the Adjust screen already did it.
   const [warm, setWarm] = useState(() => {
-    const reason = !last && !(first && first.warmedUp) && purgeN > 0 ? warmUpReason(grinderShots, grinder.purgedAt) : null;
+    const reason = !last && !(first && first.warmedUp) && purgeN > 0 ? warmUpReason(coffeeShots, purgedAtFor(grinder, run.coffeeId)) : null;
     return { reason, count: 0, done: !reason };
   });
   const finishWarm = () => { setWarm(w => ({ ...w, done: true })); if (onPurged) onPurged(); };

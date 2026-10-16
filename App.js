@@ -63,6 +63,9 @@ export default function App() {
     : shotLimitReached(st.tier, st.shots) ? 'limit' : grinder && grinder.archived ? 'archived' : null;
 
   /* ---------- actions ---------- */
+  // warm-ups are remembered per coffee on each grinder
+  const markWarm = cid => update(s => ({ ...s, grinders: s.grinders.map(g => (g.id !== grinder.id ? g
+    : { ...g, purgedAt: { ...(g.purgedAt && typeof g.purgedAt === 'object' ? g.purgedAt : {}), [cid]: new Date().toISOString() } })) }));
   const setGrinder = (id, patch) => update(s => ({ ...s, grinders: s.grinders.map(g => (g.id === id ? { ...g, ...patch } : g)) }));
   const registerGrinder = (name, model, gauge) => {
     const g = { id: newId('g'), name, model, rules: {}, gauge, lastSetting: null, archived: false, createdAt: new Date().toISOString() };
@@ -123,7 +126,7 @@ export default function App() {
     if (flow && flow.kind === 'loop' && run) {
       body = <ShotLoop grinder={grinder} coffee={coffeeById(st, run.coffeeId) || { name: 'Coffee' }} run={run} runShots={runShots}
         coffeeShots={coffeeShots(run.coffeeId)} grinderShots={epoch} first={run.first} blocked={blocked} simple={simple}
-        onRecord={recordShot} onDoseCheck={recordDoseCheck} onPurged={() => setGrinder(grinder.id, { purgedAt: new Date().toISOString() })} onToggleExclude={toggleExclude} onSave={saveCal} onRestart={restartRun} onStop={() => setFlow(null)}
+        onRecord={recordShot} onDoseCheck={recordDoseCheck} onPurged={cid => markWarm(cid || run.coffeeId)} onToggleExclude={toggleExclude} onSave={saveCal} onRestart={restartRun} onStop={() => setFlow(null)}
         onChangeRules={changeRules} onSeePlans={() => go('account')} />;
     } else if (flow && flow.kind === 'new') {
       body = <NewCoffee grinder={grinder} coffees={st.coffees} preset={flow.preset} onCreateCoffee={createCoffee}
@@ -132,7 +135,7 @@ export default function App() {
       body = <Adjust grinder={grinder} items={items} startCoffeeId={flow.coffeeId} coffeeShots={coffeeShots} grinderShots={epoch}
         maintain={!!flow.maintain} simple={simple} onStart={startRun} onCancel={() => setFlow(null)} onNewCoffee={() => setFlow({ kind: 'new' })}
         onRedial={(cid, cal) => setFlow({ kind: 'new', preset: { coffeeId: cid, dose: cal.dose, yield: cal.yield } })}
-        onSetPosition={s => setGrinder(grinder.id, { lastSetting: s })} onPurged={() => setGrinder(grinder.id, { purgedAt: new Date().toISOString() })} />;
+        onSetPosition={s => setGrinder(grinder.id, { lastSetting: s })} onPurged={cid => markWarm(cid)} />;
     } else if (flow && flow.kind === 'saved') {
       const c = coffeeById(st, flow.coffeeId), k = activeCal(st, grinder, flow.coffeeId);
       body = (

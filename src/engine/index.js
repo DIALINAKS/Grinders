@@ -756,6 +756,11 @@ export function warmUpReason(shots, purgedAt, nowMs = Date.now(), idleMin = IDLE
   }
   return null;
 }
+/** When this coffee was last warmed up on this grinder (warm-ups are kept per coffee). */
+export const purgedAtFor = (grinder, coffeeId) => {
+  const p = grinder && grinder.purgedAt;
+  return p && typeof p === 'object' ? p[coffeeId] || null : null;
+};
 export function warmUpText(reason, n, grinderName) {
   const run = `Run ${n} shot${n === 1 ? '' : 's'} through before changing anything`;
   if (!reason) return '';
