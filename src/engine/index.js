@@ -29,7 +29,10 @@ export const RULE_DEFAULTS = {
   presets: '',       // saved doser presets, e.g. "5.8, 6.0, 6.2"
   doserStep: 0.1,    // smallest step the doser timer can be set in: 0.1 or 0.01 s
   doserNotch: '',    // optional override: doser seconds per subdivision finer; blank = learned
-  purge: 3,          // doses to grind off after a grind change, so old grind left in the grinder doesn't skew the test shot
+  purge: 3,
+  // Starting rule for room temperature, ON by default: 1 notch per this many °C. Used only until this
+  // grinder's own shots have measured the temperature effect; then the measured figure takes over. '' = off.
+  degNotch: 5,          // doses to grind off after a grind change, so old grind left in the grinder doesn't skew the test shot
   // House rules: OFF by default. Only used when a manager switches them on, and always
   // labelled as a house rule, never as a measured or verified figure.
   houseRules: false,
@@ -374,18 +377,27 @@ export const SOURCES = {
  */
 function guided({ P, calRow, anchor, M, rules, step, lo, hi, target, dose, note, room }) {
   const QM = M * QTR;
-  let s0, t;
+  let s0, t, refRoom = null;
   if (anchor && anchor.kind === 'shot' && ok(num(anchor.time)) && ok(fromDial(num(anchor.setting), M))) { s0 = fromDial(num(anchor.setting), M); t = num(anchor.time); }
-  else { const lt = [...P].reverse().find(r => ok(r.setting) && ok(r.time)); if (!lt) return null; s0 = lt.setting; t = lt.time; }
+  else { const lt = [...P].reverse().find(r => ok(r.setting) && ok(r.time)) || (calRow && ok(calRow.setting) && ok(calRow.time) ? calRow : null); if (!lt) return null; s0 = lt.setting; t = lt.time; refRoom = lt.roomTemp; }
   const coarser = rules.dir === 'higher' ? -1 : 1; // sign of a coarser move in dial numbers
   // first step sized to the miss, so a shot just outside the band gets a small move, not a big one
   const miss = t > hi ? t - hi : t < lo ? lo - t : 0;
   const sized = miss <= 2 ? 0.5 : miss <= 5 ? 1 : GUIDE_STEPS;
   const subdiv = Math.max(sized, num(rules.minStep) || 1);
-  const delta = t > hi ? coarser * subdiv / M : t < lo ? -coarser * subdiv / M : 0;
+  let delta = t > hi ? coarser * subdiv / M : t < lo ? -coarser * subdiv / M : 0;
+  // starting rule for room temperature (1 notch per degNotch °C) when the room has changed since that shot
+  const tempRule = num(rules.degNotch) > 0 ? num(rules.degNotch) : null;
+  let tempNotch = 0;
+  if (tempRule && room && ok(room.roomTemp) && ok(refRoom)) {
+    tempNotch = (room.roomTemp - refRoom) / tempRule * (rules.warm === 'coarser' ? 1 : -1); // + = coarser
+    delta += coarser * tempNotch / M;
+  }
   const s1 = s0 + Math.round(delta / step) * step;
   const isHold = Math.abs(s1 - s0) < step / 2;
-  const moveShort = isHold ? 'hold' : `${marksText(Math.round(Math.abs(s1 - s0) * M * 100) / 100)} ${t > hi ? 'coarser' : 'finer'}`;
+  const goesCoarser = (s1 - s0) * coarser > 0;
+  const moveShort = isHold ? 'hold' : `${marksText(Math.round(Math.abs(s1 - s0) * M * 100) / 100)} ${goesCoarser ? 'coarser' : 'finer'}`;
+  const tempText = Math.abs(tempNotch) >= 0.25 ? `Room ${fmt(refRoom)} → ${fmt(room.roomTemp)} °C: about ${marksText(Math.round(Math.abs(tempNotch) * 4) / 4)} ${tempNotch > 0 ? 'coarser' : 'finer'} (starting rule, 1 notch per ${fmt(tempRule, 0)} °C)` : '';
   // doser: proportional from the last weighed drop only
   const rows = [...P, ...(calRow ? [calRow] : [])];
   const lastR = rows.filter(r => ok(dropped(r)) && ok(r.doserTime) && r.doserTime > 0).slice(-1)[0];
@@ -396,7 +408,7 @@ function guided({ P, calRow, anchor, M, rules, step, lo, hi, target, dose, note,
     status: 'ready', guided: true, M, model: null,
     dial: { value: s1, text: fmtDial(s1, M), entry: toEntry(s1, M), words: dialWords(s1, M), range: null, anchor: '', move: moveShort,
             capped: false, conservative: true, breakdown: [], delta: s1 - s0, anchorValue: s0, anchorText: fmtDial(s0, M), fromText: fmtDial(s0, M),
-            moveShort, reason: isHold ? '' : `${fmt(t)} s is ${t > hi ? 'slower' : 'faster'} than your ${fmt(lo, 0)}–${fmt(hi, 0)} s band${note ? `. ${note}` : ''}` },
+            moveShort, reason: isHold ? '' : [t > hi || t < lo ? `${fmt(t)} s is ${t > hi ? 'slower' : 'faster'} than your ${fmt(lo, 0)}–${fmt(hi, 0)} s band` : '', tempText].filter(Boolean).join('. ') + (note ? `. ${note}` : '') },
     target, targetLo: lo, targetHi: hi, lo, hi, inRange: isHold, inBand: isHold, ifUnchanged: t, predictedTime: null,
     confidence: 'Low', source: 'guidance', sourceText: SOURCES.guidance, label: 'Insufficient data', tier: 'insufficient', enoughHistory: false, notApplied: [], uncertain: [],
     slopeSource: 'none', env: {}, finerIsHigher: rules.dir === 'higher', direction: '',
@@ -468,6 +480,8 @@ export function recommend({ shots, grinderShots, rules, gauge = true, now, ancho
   const parts = [];
   let anchorS, expected, anchorLabel, fromS;
   const notApplied = [], uncertain = [];
+  const tempRule = num(rules.degNotch) > 0 ? num(rules.degNotch) : null;
+  const warmSign = rules.warm === 'coarser' ? 1 : -1; // warmer room, grind unchanged: shot runs faster (−) when the rule is 'finer'
   const condShift = ref => {
     let shift = 0;
     COV.forEach((k, i) => {
@@ -482,9 +496,12 @@ export function recommend({ shots, grinderShots, rules, gauge = true, now, ancho
         const consistent = !ENV.includes(k) || (se !== null && se !== undefined && Math.abs(m.beta[2 + i]) >= 2 * se);
         if (!measured || !consistent) uncertain.push({ k, from: ref[k], to: c[k] });
       }
-      const d = m.beta[2 + i] * (m.cov(k, c[k]) - m.cov(k, ref[k]));
+      const useRule = k === 'roomTemp' && tempRule && !bench.house && !(m.env.roomTemp && m.env.roomTemp.measured);
+      // starting rule: 1 notch per degNotch °C (warmer → finer by default), in seconds at this grinder's own rate
+      const d = useRule ? warmSign * (Math.abs(b1) / M) * (c[k] - ref[k]) / tempRule
+        : m.beta[2 + i] * (m.cov(k, c[k]) - m.cov(k, ref[k]));
       shift += d;
-      if (Math.abs(d / b1) >= step / 2) parts.push({ k, from: ref[k], to: c[k], notch: -d / b1, seconds: d });
+      if (Math.abs(d / b1) >= step / 2) parts.push({ k, from: ref[k], to: c[k], notch: -d / b1, seconds: d, rule: useRule });
     });
     return shift;
   };
@@ -530,7 +547,8 @@ export function recommend({ shots, grinderShots, rules, gauge = true, now, ancho
 
   const showVal = (k, v) => !ok(v) ? '–' : k === 'position' ? fmtDial(v, M) : k === 'workload' ? (LOADS[v] || '–') : k === 'humidity' ? fmt(v, 0) + ' % RH'
     : fmt(v, 1) + ((k === 'yield' || k === 'dose') ? ' g' : ' °C');
-  const envStatus = k => (m.env[k] && m.env[k].measured ? 'measured' : bench.house ? 'house rule' : 'not measured');
+  const envStatus = k => (m.env[k] && m.env[k].measured ? 'measured' : bench.house ? 'house rule'
+    : k === 'roomTemp' && parts.some(p => p.k === 'roomTemp' && p.rule) ? 'starting rule' : 'not measured');
   const rem = delta - parts.reduce((t, p) => t + p.notch, 0);
   const breakdown = parts.length
     ? [...parts.map(p => ({ label: `${NAMES[p.k]} ${showVal(p.k, p.from)} → ${showVal(p.k, p.to)}`, move: word(p.notch), status: ENV.includes(p.k) ? envStatus(p.k) : null })),
@@ -539,7 +557,7 @@ export function recommend({ shots, grinderShots, rules, gauge = true, now, ancho
 
   // ---- confidence and source ----
   const envUsed = parts.filter(p => ENV.includes(p.k));
-  const envBench = envUsed.some(p => envStatus(p.k) === 'house rule');
+  const envBench = envUsed.some(p => envStatus(p.k) === 'house rule' || envStatus(p.k) === 'starting rule');
   let source = m.slopeSource === 'benchmark' ? 'guidance' : envUsed.length ? (envBench ? 'benchmarkEnv' : 'environment') : 'grinder';
   if (anchor && anchor.kind === 'shot' && m.slopeSource !== 'benchmark') source = 'grinder';
   const rangeNotch = ok(m.sigma) ? m.sigma / Math.abs(b1) : null;

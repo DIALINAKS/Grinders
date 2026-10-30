@@ -61,6 +61,18 @@ export default function Rules({ grinder, onChange, readOnly, onGauge, onRecalibr
       </Card>
 
       <Card>
+        <H2>Room temperature: starting rule</H2>
+        <Body muted>Until this grinder's own shots have measured how room temperature changes the grind, Dial In uses this rule. Once it has measured the real figure, the measured figure takes over. Leave blank to switch the rule off.</Body>
+        <Grid>
+          <Field label="Room °C per notch" value={r.degNotch === '' || r.degNotch == null ? '' : String(r.degNotch)} onChangeText={set('degNotch')} placeholder="Blank: off" editable={!readOnly} />
+        </Grid>
+        <View style={{ gap: S.sm }}>
+          <Label>When the room warms up</Label>
+          <Segmented disabled={readOnly} options={[{ value: 'finer', label: 'Go finer' }, { value: 'coarser', label: 'Go coarser' }]} value={r.warm} onChange={set('warm')} />
+        </View>
+      </Card>
+
+      <Card>
         <H2>House rules</H2>
         <Body muted>Off by default. Dial In works out every figure from this grinder's own measurements. A manager can switch on fixed rules of thumb here; anything based on them is labelled "house rule" and never shown as verified.</Body>
         <Segmented disabled={readOnly} options={[{ value: false, label: 'Off (measured only)' }, { value: true, label: 'On' }]} value={!!r.houseRules} onChange={set('houseRules')} />
@@ -73,10 +85,6 @@ export default function Rules({ grinder, onChange, readOnly, onGauge, onRecalibr
               {r.burr === 'fan' ? <Field label="Busier step: notches coarser" value={r.loadMarks} onChangeText={set('loadMarks')} editable={!readOnly} /> : null}
               <Field label="Doser seconds per notch" value={r.doserNotch} onChangeText={set('doserNotch')} placeholder="Blank: learned" editable={!readOnly} />
             </Grid>
-            <View style={{ gap: S.sm }}>
-              <Label>When the room warms up</Label>
-              <Segmented disabled={readOnly} options={[{ value: 'finer', label: 'Go finer' }, { value: 'coarser', label: 'Go coarser' }]} value={r.warm} onChange={set('warm')} />
-            </View>
           </>
         ) : null}
       </Card>

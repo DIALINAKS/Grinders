@@ -83,8 +83,22 @@ t('house rule on: both change, the two effects add', () => {
   assert.ok(envRow(r, 'Room temperature') && envRow(r, 'Humidity'));
 });
 
-t('default: a room change with no history yet is taken into account at what the shots show (nothing yet) and flagged as still learning', () => {
-  const r = recommend({ shots: prior, rules: mazzer, now: { ...now0, roomTemp: 23, humidity: 70 }, anchor: { kind: 'calibration', cal, current: 4.0 } });
+t('default: starting rule of 1 notch per 5 °C until the room effect is measured', () => {
+  const r = recommend({ shots: prior, rules: mazzer, now: { ...now0, roomTemp: 23, humidity: 50 }, anchor: { kind: 'calibration', cal, current: 4.0 } });
+  const row = envRow(r, 'Room temperature');
+  assert.equal(row.move, '0.6 notch finer');       // 3 °C ÷ 5 °C per notch = 0.6 notch (set as the nearest half notch)
+  assert.equal(row.status, 'starting rule');
+  assert.equal(r.confidence, 'Low');
+  const r5 = recommend({ shots: prior, rules: mazzer, now: { ...now0, roomTemp: 25, humidity: 50 }, anchor: { kind: 'calibration', cal, current: 4.0 } });
+  assert.equal(r5.dial.moveShort, '1 notch finer');  // 5 °C warmer = 1 notch
+  const r10 = recommend({ shots: prior, rules: mazzer, now: { ...now0, roomTemp: 30, humidity: 50 }, anchor: { kind: 'calibration', cal, current: 4.0 } });
+  assert.equal(r10.dial.moveShort, '2 notches finer'); // 10 °C warmer = 2 notches
+  const cool = recommend({ shots: prior, rules: mazzer, now: { ...now0, roomTemp: 15, humidity: 50 }, anchor: { kind: 'calibration', cal, current: 4.0 } });
+  assert.equal(cool.dial.moveShort, '1 notch coarser'); // 5 °C cooler = 1 notch coarser
+});
+
+t('starting rule switched off: a room change with no history yet is taken into account at what the shots show (nothing yet) and flagged as still learning', () => {
+  const r = recommend({ shots: prior, rules: { ...mazzer, degNotch: '' }, now: { ...now0, roomTemp: 23, humidity: 70 }, anchor: { kind: 'calibration', cal, current: 4.0 } });
   assert.equal(r.dial.breakdown.length, 0);
   assert.equal(r.dial.moveShort, 'hold');
   assert.equal(r.label, 'Provisional recommendation'); // room change not yet measured: verify with a shot
