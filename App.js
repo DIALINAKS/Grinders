@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, Image, ScrollView, Pressable, SafeAreaView, StatusBar, Platform, KeyboardAvoidingView, StyleSheet } from 'react-native';
+import { View, Text, Image, ScrollView, Pressable, StatusBar, Platform, KeyboardAvoidingView, StyleSheet } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { C, S, R } from './src/theme';
 import { load, save } from './src/store';
 import { newId, epochShots, activeCal, grinderCoffees, coffeeById, saveCalibration, saveCalibrationFromShot, unsavedInBand, recalibrate, withSample, withoutSample } from './src/model';
@@ -19,7 +20,7 @@ import Account from './src/screens/Account';
 import ArchivePick from './src/screens/ArchivePick';
 
 // shown in the footer so we can tell which version a phone is running
-const BUILD = '2 Nov 15:15';
+const BUILD = '2 Nov 16:00 · SDK 58';
 
 const TABS = [
   { key: 'home', label: 'DIAL IN', icon: 'dial' },
@@ -262,12 +263,14 @@ function applyTier(s, tier) {
 
 function Shell({ children }) {
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: C.bg, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }}>
-      <StatusBar barStyle="light-content" backgroundColor={C.bg} />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'android' ? 'height' : undefined}>
-        {children}
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+    <SafeAreaProvider>
+      <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top', 'left', 'right']}>
+        <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'android' ? 'height' : undefined}>
+          {children}
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </SafeAreaProvider>
   );
 }
 
