@@ -32,7 +32,11 @@ export const RULE_DEFAULTS = {
   purge: 3,
   // Starting rule for room temperature, ON by default: 1 notch per this many °C. Used only until this
   // grinder's own shots have measured the temperature effect; then the measured figure takes over. '' = off.
-  degNotch: 5,          // doses to grind off after a grind change, so old grind left in the grinder doesn't skew the test shot
+  degNotch: 5,
+  // Starting rule for the grind response, ON by default: one notch changes the extraction by about this many
+  // seconds. It counts like a couple of shots, so it steadies the first few predictions; as shots at different
+  // settings come in, the grinder's own measured figure takes over. '' = off.
+  secNotch: 10,          // doses to grind off after a grind change, so old grind left in the grinder doesn't skew the test shot
   // House rules: OFF by default. Only used when a manager switches them on, and always
   // labelled as a house rule, never as a measured or verified figure.
   houseRules: false,
@@ -178,7 +182,11 @@ export function solve(A, b) {
 
 /** Benchmarks from the grinder's rules, in seconds per unit. */
 export function benchmarks(rules) {
-  if (!rules.houseRules) return { slope: null, perC: 0, perRH: 0, perLoad: 0, fan: rules.burr === 'fan', house: false };
+  if (!rules.houseRules) {
+    const sn = num(rules.secNotch), Mk = dialMarks(rules);
+    const slope = ok(sn) && sn > 0 ? (rules.dir === 'higher' ? 1 : -1) * sn * Mk : null; // seconds per number, finer = slower
+    return { slope, perC: 0, perRH: 0, perLoad: 0, fan: rules.burr === 'fan', house: false, starting: slope !== null };
+  }
   const spn = num(rules.step), deg = num(rules.deg), M = dialMarks(rules), hEq = num(rules.humEq);
   const slope = ok(spn) && spn > 0 ? (rules.dir === 'higher' ? spn : -spn) : null; // finer = slower
   const perC = ok(spn) && spn > 0 && ok(deg) && deg > 0 ? (rules.warm === 'finer' ? -1 : 1) * spn / deg : 0;
@@ -271,9 +279,12 @@ function fitOnce(L0, bench, pool, gauge) {
   const n = L.length, distinct = new Set(L.map(s => s.setting)).size;
   let slopePrior = null, slopeW = 0, slopeSource = 'benchmark';
   if (distinct >= 2) slopeSource = 'measured';
-  if (pool && Math.abs(pool.slope) >= 0.3) { slopePrior = pool.slope; slopeW = SLOPE_W * Math.min(pool.n, 8); if (distinct < 2) slopeSource = 'grinder'; }
+  // another coffee's measured response replaces the starting rule only once it rests on a few shots
+  if (pool && Math.abs(pool.slope) >= 0.3 && (!bench.starting || pool.n >= 4)) { slopePrior = pool.slope; slopeW = SLOPE_W * Math.min(pool.n, 8); if (distinct < 2) slopeSource = 'grinder'; }
   else if (bench.slope !== null) { slopePrior = bench.slope; slopeW = SLOPE_W * 2; }
   if (n < 1 || (distinct < 2 && slopePrior === null)) return { ok: false, n };
+  // how much of the grind slope still rests on the starting rule (1 = all of it, 0 = all measured)
+  let priorShare = 0;
 
   const mean = {};
   COV.forEach(k => { const v = L.map(s => s[k]).filter(ok); mean[k] = v.length ? avg(v) : 0; });
@@ -293,7 +304,12 @@ function fitOnce(L0, bench, pool, gauge) {
     workload: bench.fan ? [bench.perLoad, bench.perLoad ? PRIOR_W : 1] : [0, 1e6],
   };
   COV.forEach((k, i) => { A[2 + i][2 + i] += pr[k][1]; b[2 + i] += pr[k][0] * pr[k][1]; });
-  if (slopePrior !== null) { A[1][1] += slopeW; b[1] += slopeW * slopePrior; }
+  if (slopePrior !== null) {
+    const sxxW = (() => { const W = L.reduce((t, s) => t + (ok(s.w) ? s.w : 1), 0); const mx = L.reduce((t, s) => t + (ok(s.w) ? s.w : 1) * s.setting, 0) / W;
+      return L.reduce((t, s) => t + (ok(s.w) ? s.w : 1) * (s.setting - mx) ** 2, 0); })();
+    if (slopePrior === bench.slope && bench.starting) priorShare = slopeW / (slopeW + sxxW);
+    A[1][1] += slopeW; b[1] += slopeW * slopePrior;
+  }
   const beta = solve(A, b); if (!beta) return { ok: false, n };
   const pred = s => row(s).reduce((t, x, i) => t + x * beta[i], 0);
   const ssr = L.map(s => s.time - pred(s)).reduce((t, r) => t + r * r, 0);
@@ -320,7 +336,7 @@ function fitOnce(L0, bench, pool, gauge) {
     rateTrend = settingsTried >= 2 ? (x => { const xc = Math.min(xmax + 1, Math.max(xmin - 1, x)); return Math.max(rmin * 0.5, myr + slope * (xc - mx)); }) : null;
     drops = { n: R.length, settings: settingsTried };
   }
-  return { ok: true, n, distinct, beta, se, mean, cov, sigma, r2: sst > 0 ? 1 - ssr / sst : null, L, rate, rateTrend, drops, slopeSource, env: envEvidence(L) }; // room/workload evidence: every recorded result
+  return { ok: true, n, distinct, beta, se, mean, cov, sigma, r2: sst > 0 ? 1 - ssr / sst : null, L, rate, rateTrend, drops, slopeSource, priorShare, starting: !!bench.starting && priorShare > 0, env: envEvidence(L) }; // room/workload evidence: every recorded result
 }
 
 /* ---------------- doser: what each second is worth in grams, against the room ---------------- */
@@ -524,7 +540,12 @@ export function recommend({ shots, grinderShots, rules, gauge = true, now, ancho
   const inRange = expected >= lo && expected <= hi;
   let rawDelta = (target - expected) / b1;
   let capped = false, conservative = false;
-  if (m.slopeSource === 'benchmark') {
+  if (m.slopeSource === 'benchmark' && m.starting) {
+    // starting rule (e.g. 10 s per notch): move by what the rule says, at least the smallest step, at most 1 number
+    conservative = true;
+    if (Math.abs(rawDelta) > 1) { rawDelta = Math.sign(rawDelta); capped = true; }
+    if (!inRange && Math.abs(rawDelta) < step) rawDelta = Math.sign(rawDelta) * step;
+  } else if (m.slopeSource === 'benchmark') {
     // grind response unknown: half the benchmark move, no more than half a number per shot
     conservative = true;
     rawDelta = rawDelta * 0.5;
@@ -616,7 +637,7 @@ export function recommend({ shots, grinderShots, rules, gauge = true, now, ancho
     target, targetLo: hasBand ? tLo : null, targetHi: hasBand ? tHi : null, lo, hi, inRange, inBand: inRange, ifUnchanged: expected, predictedTime: expected + b1 * delta,
     confidence, source, sourceText: SOURCES[source], enoughHistory, label, tier, notApplied: notAppliedText, micro,
     uncertain: uncertain.map(p => `${NAMES[p.k]} ${showVal(p.k, p.from)} → ${showVal(p.k, p.to)}`),
-    slopeSource: m.slopeSource, env: m.env,
+    slopeSource: m.slopeSource, env: m.env, slopeRule: m.starting ? (m.priorShare > 0.5 ? 'starting' : m.priorShare > 0.1 ? 'blend' : '') : '',
     finerIsHigher: rules.dir === 'higher',
     direction: b1 < 0 ? 'Lower numbers run slower on this grinder.' : 'Higher numbers run slower on this grinder.',
     dose: { seconds: doser, target: dose, preset, lastSeconds: lastR ? lastR.doserTime : null, lastGrams: lastR ? dropped(lastR) : null,
@@ -651,7 +672,7 @@ export function insights({ shots, grinderShots, rules, gauge = true }) {
     const b = name => m.beta[2 + COV.indexOf(name)];
     const house = benchmarks(rules).house;
     const st = k => (m.env[k] && m.env[k].measured ? 'measured' : house ? 'house rule' : 'not measured');
-    effects = [{ label: 'Grind: 1 notch finer', seconds: Math.abs(m.beta[1]) / M, status: m.slopeSource === 'benchmark' ? 'house rule' : 'measured' }];
+    effects = [{ label: 'Grind: 1 notch finer', seconds: Math.abs(m.beta[1]) / M, status: m.slopeSource === 'benchmark' ? (m.starting ? 'starting rule' : 'house rule') : m.starting && m.priorShare > 0.1 ? 'measured + starting rule' : 'measured' }];
     if (gauge) effects.push(
       { label: 'Room temperature: +2 °C', seconds: b('roomTemp') / SCALE.roomTemp * 2, status: st('roomTemp') },
       { label: 'Humidity: +10 % RH', seconds: b('humidity') / SCALE.humidity * 10, status: st('humidity') });

@@ -61,9 +61,10 @@ export default function Rules({ grinder, onChange, readOnly, onGauge, onRecalibr
       </Card>
 
       <Card>
-        <H2>Room temperature: starting rule</H2>
-        <Body muted>Until this grinder's own shots have measured how room temperature changes the grind, Dial In uses this rule. Once it has measured the real figure, the measured figure takes over. Leave blank to switch the rule off.</Body>
+        <H2>Starting rules</H2>
+        <Body muted>Until this grinder's own shots have measured the real figures, Dial In uses these. As your shots come in, the measured figures take over. Leave a box blank to switch that rule off.</Body>
         <Grid>
+          <Field label="Extraction seconds per notch" value={r.secNotch === '' || r.secNotch == null ? '' : String(r.secNotch)} onChangeText={set('secNotch')} placeholder="Blank: off" editable={!readOnly} />
           <Field label="Room °C per notch" value={r.degNotch === '' || r.degNotch == null ? '' : String(r.degNotch)} onChangeText={set('degNotch')} placeholder="Blank: off" editable={!readOnly} />
         </Grid>
         <View style={{ gap: S.sm }}>

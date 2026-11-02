@@ -18,7 +18,7 @@ export function Basis({ r, compact }) {
       </View>
       <Text style={st.basisText}>Based on: {r.sourceText}</Text>
       {r.guided ? <Text style={st.note}>This grinder hasn't been measured on this coffee yet, so this is a cautious first step sized to how far the shot was from your range, not a prediction. The next shot measures how this grinder responds.</Text>
-        : r.dial.conservative ? <Text style={st.note}>Using a house rule until this grinder is measured.</Text> : null}
+        : r.dial.conservative ? <Text style={st.note}>{r.slopeRule ? 'Using the starting rule (seconds per notch in grinder settings) until this grinder is measured.' : 'Using a house rule until this grinder is measured.'}</Text> : null}
       {r.tier === 'provisional' ? <Text style={st.note}>Limited data so far: confirm it with the next shot.</Text> : null}
       {r.micro ? <Text style={st.note}>Micro-adjustment: still inside your band, but your recorded shots show this change moves it clearly off {fmt(r.target, 0)} s. This is the smallest step that brings it back.</Text> : null}
       {!compact && r.uncertain && r.uncertain.length ? <Text style={st.note}>Still learning how {r.uncertain.join('; ')} affects this grinder. The prediction uses what your shots show so far: every result sharpens it.</Text> : null}
@@ -75,7 +75,7 @@ export default function Recommendation({ r, M, grinder, onChangeRules, compact }
         <View style={st.tile}>
           <Text style={st.tileLabel}>PER NOTCH</Text>
           <Text style={st.tileValue}>{r.secondsPerMark != null ? `${fmt(r.secondsPerMark)} s` : '–'}</Text>
-          <Text style={st.tileSub}>{r.secondsPerMark == null ? 'measured from the next shot' : r.slopeSource === 'benchmark' ? 'house rule' : r.slopeSource === 'grinder' ? 'measured on other coffees' : 'measured'}</Text>
+          <Text style={st.tileSub}>{r.secondsPerMark == null ? 'measured from the next shot' : r.slopeRule === 'starting' ? 'starting rule' : r.slopeRule === 'blend' ? 'measured + starting rule' : r.slopeSource === 'benchmark' ? 'house rule' : r.slopeSource === 'grinder' ? 'measured on other coffees' : 'measured'}</Text>
         </View>
       </View>
 

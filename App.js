@@ -19,7 +19,7 @@ import Account from './src/screens/Account';
 import ArchivePick from './src/screens/ArchivePick';
 
 // shown in the footer so we can tell which version a phone is running
-const BUILD = '30 Oct 19:00';
+const BUILD = '2 Nov 15:15';
 
 const TABS = [
   { key: 'home', label: 'DIAL IN', icon: 'dial' },

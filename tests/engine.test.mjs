@@ -3,9 +3,10 @@
 import { roomRate, toEntry, checkShot, stepResponse, doserFor, roundDoser, doserStepOf, recommend, rulesFor, fromDial, fmtDial, checkDialEntry, reconcileGrinders, usageText, insights, redialCheck, warmUpReason } from '../src/engine/index.js';
 import assert from 'node:assert/strict';
 
-const mazzer = rulesFor({ model: 'Mazzer' });          // 10 subdivisions, finer = lower number, no house rules
+const mazzer = rulesFor({ model: 'Mazzer', rules: { secNotch: '' } }); // 10 subdivisions, finer = lower number, measured grind response only
+const mazzerRule = rulesFor({ model: 'Mazzer' });      // app defaults: starting rules 10 s per notch, 1 notch per 5 °C
 const house = rulesFor({ model: 'Mazzer', rules: { houseRules: true, step: 10, deg: 4, humEq: 12 } }); // manager-enabled house rules
-const mythos = rulesFor({ model: 'Mythos One' });
+const mythos = rulesFor({ model: 'Mythos One', rules: { secNotch: '' } });
 const now0 = { target: 30, targetLo: 28, targetHi: 32, dose: 18, yield: 36 };
 const day = n => new Date(Date.now() - n * 864e5).toISOString();
 let passed = 0;
@@ -382,6 +383,30 @@ t('shots to run through: 2 on a Mythos One, 3 elsewhere, and a grinder setting w
   assert.equal(rulesFor({ model: 'Mythos One' }).purge, 2);
   assert.equal(rulesFor({ model: 'Compak E6' }).purge, 3);
   assert.equal(rulesFor({ model: 'Mythos One', rules: { purge: 1 } }).purge, 1);
+});
+
+t('starting rule: 10 s per notch until measured (27 s against 28–32 s → ½ notch finer, not 2)', () => {
+  const r = recommend({ shots: [{ setting: 6.5, time: 27, dose: 18, yield: 36, ts: day(0) }], rules: mazzerRule, now: now0, anchor: { kind: 'shot', setting: 6.5, time: 27 } });
+  assert.equal(r.dial.moveShort, '½ notch finer');   // 3 s ÷ 10 s per notch = 0.3 notch → smallest step
+  assert.equal(r.slopeRule, 'starting');
+  assert.equal(Math.round(r.secondsPerMark), 10);
+  const r20 = recommend({ shots: [{ setting: 6.5, time: 50, dose: 18, yield: 36, ts: day(0) }], rules: mazzerRule, now: now0, anchor: { kind: 'shot', setting: 6.5, time: 50 } });
+  assert.equal(r20.dial.moveShort, '2 notches coarser'); // 20 s slow = 2 notches
+});
+
+t('starting rule: noisy shots a half notch apart cannot drag the response down to 2-notch jumps', () => {
+  // 1 s difference over ½ notch looks like 2 s per notch; the rule keeps it near 10 until shots spread out
+  const shots = [{ setting: 6.5, time: 30, dose: 18, yield: 36, ts: day(0), coffeeId: 'a' }, { setting: 6.55, time: 29, dose: 18, yield: 36, ts: day(0), coffeeId: 'a' }];
+  const r = recommend({ shots, rules: mazzerRule, now: now0, anchor: { kind: 'shot', setting: 6.55, time: 27 } });
+  assert.ok(r.secondsPerMark > 7, `got ${r.secondsPerMark}`);
+  assert.equal(r.dial.moveShort, '½ notch finer');
+});
+
+t('starting rule: measured shots across the dial take over', () => {
+  const shots = [6.0, 6.3, 6.6, 6.9, 7.2].map((x, i) => ({ setting: x, time: 30 + (6.6 - x) * 25, dose: 18, yield: 36, ts: day(0) })); // really 2.5 s per notch
+  const r = recommend({ shots, rules: mazzerRule, now: now0, anchor: { kind: 'shot', setting: 6.6, time: 30 } });
+  assert.ok(r.secondsPerMark < 4, `got ${r.secondsPerMark}`);
+  assert.equal(r.slopeRule, '');
 });
 
 console.log(`All ${passed} engine tests passed.`);
